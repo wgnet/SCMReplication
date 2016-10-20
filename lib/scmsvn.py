@@ -354,7 +354,13 @@ class ReplicationSvn(ReplicationSCM):
         externals_to_checkout = set()
         for mod_dir in modified_dirs:
             mod_dir_url = self.translate_abspath_to_repopath([mod_dir])[0]
-            prev_props = self.svn.run_proplist(mod_dir_url, prev_rev, rev)
+            prev_props = None
+            try:
+                prev_props = self.svn.run_proplist(mod_dir_url, prev_rev, rev)
+            except Exception, e:
+                if not 'Unable to find repository location for' in str(e):
+                    raise
+
             curr_props = self.svn.run_proplist(mod_dir_url, rev, rev)
 
             prev_external = curr_external = None
@@ -830,6 +836,11 @@ class ReplicationSvn(ReplicationSCM):
         user = self.SVN_USER
         passwd = self.SVN_PASSWD
         svn = SvnPython(repo_url, user, passwd, svn_root)
+
+        has_existing_wc = os.path.isdir(os.path.join(svn_root, '.svn'))
+        if has_existing_wc:
+            self.logger.info('%s already has a working copy' % svn_root)
+            return
 
         try:
             svn.checkout_working_copy(project_dir, self.counter,

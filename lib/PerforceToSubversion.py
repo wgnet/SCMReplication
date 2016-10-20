@@ -472,5 +472,5 @@ def PerforceToSubversion():
     p4_to_svn = P4ToSvn()
 
     with working_in_dir(p4_to_svn.source.get_root_folder()):
-        p4_to_svn.replicate()
+        return p4_to_svn.replicate()
 

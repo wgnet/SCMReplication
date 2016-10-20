@@ -1128,7 +1128,8 @@ class ReplicationP4(ReplicationSCM):
         if fstats:
             fstats = fstats[0]
 
-        file_exists_in_target = fstats and fstats['headAction'] != 'delete'
+        # fstats is neither 'delete' nor 'move/delete'
+        file_exists_in_target = fstats and 'delete' not in fstats['headAction']
         if not file_exists_in_target:
             st = os.stat(file_change_rev.fixedLocalFile)
             os.chmod(file_change_rev.fixedLocalFile,

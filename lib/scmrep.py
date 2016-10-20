@@ -179,6 +179,10 @@ class ReplicationSCM(object):
 
         return rep_info
 
+    def sanitise_commit_message(self, desc):
+        desc = desc.replace('\r', '')
+        return desc
+
     def format_replicate_desc(self, desc, src_rev, src_srv,
                               orig_submitter, orig_submit_time):
         '''use description prefix pattern to format p4 commit message
@@ -200,6 +204,8 @@ class ReplicationSCM(object):
         else:
             # suffix
             desc = desc.rstrip() + '\n\n' + rep_info
+
+        desc = self.sanitise_commit_message(desc)
 
         return desc
 

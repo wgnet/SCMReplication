@@ -140,7 +140,8 @@ def replicate(args):
         if args.replicate_user_and_timestamp:
             sys.argv.extend(['--replicate-user-and-timestamp'])
 
-        if hasattr(args, 'svn_ignore_externals'):
+        if (hasattr(args, 'svn_ignore_externals') and
+            args.svn_ignore_externals):
             sys.argv.extend(['--svn-ignore-externals'])
 
         # let's go

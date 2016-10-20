@@ -47,7 +47,6 @@ Configuration/command examples can be found in the directory:
 
 	./cfg
 
-
 <a id="org5c67076"></a>
 
 # Installation
