@@ -29,6 +29,9 @@ Sven Erik Knop.
 
 Features:
 
+-   P4(Perforce) to P4 replication
+-   P4 to SVN(Subversion) replication
+-   SVN to P4 replication
 -   APIs, p4python and pysvn, are used.
 -   configurable source counter, changeset to stop replication,
     maximum number of changelists to replicate
