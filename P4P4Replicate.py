@@ -1,5 +1,7 @@
 #!/usr/bin/env python
 
+'''p4 to p4 replication script
+'''
 import os
 import sys
 import tempfile

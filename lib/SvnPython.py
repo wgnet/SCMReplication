@@ -29,7 +29,9 @@ def flatten(v):
     sub_list = list()
 
     if isinstance(v, basestring):
-        sub_list = shlex.split(v)
+        v = v.encode('utf8')
+        v = shlex.split(v)
+        sub_list = [s.decode('utf8') for s in v]
     elif hasattr(v,'__iter__'):
         for i in v:
             sub_list.extend(flatten(i))
@@ -154,7 +156,7 @@ class SvnPython(object):
         return True, trust_data['failures'], True
 
 
-    def run(self, sub_cmd, *cmdArgs):
+    def _run(self, sub_cmd, *cmdArgs):
         cmdList = ['svn','--non-interactive']
 
         if self.username is not None:
@@ -191,7 +193,7 @@ class SvnPython(object):
         new_args = wantsOutputAsDictList(flat_args)
         if new_args is not None:
             args = new_args
-        out = self.run(sub_cmd, args)
+        out = self._run(sub_cmd, args)
         if new_args is not None:
            return outputAsDictList(out)
         return out
@@ -212,10 +214,13 @@ class SvnPython(object):
         cmd = '--version'
         if quiet:
             cmd += ' --quiet'
-        out = self.run(cmd)
+        out = self._run(cmd)
         return out.strip()
 
     def run_copy(self, src_url_or_path, dest_url_or_path, rev=None):
+        src_url_or_path = convert_curr_locale_to_unicode_str(src_url_or_path)
+        dest_url_or_path = convert_curr_locale_to_unicode_str(dest_url_or_path)
+
         if rev:
             rev = pysvn.Revision(opt_revision_kind.number, rev)
         else:
@@ -226,6 +231,8 @@ class SvnPython(object):
     def run_log(self, path=None, start_rev=0, end_rev=None, limit=0):
         self.logger.debug('%s, %s, %d' % (path, self.wc_root, start_rev))
 
+        if path:
+            path = convert_curr_locale_to_unicode_str(path)
         revision_start = pysvn.Revision(opt_revision_kind.head)
         if end_rev:
             end_rev = int(end_rev)
@@ -257,6 +264,7 @@ class SvnPython(object):
         @param svn_dir string relative directory to url repo
         @return list of revision numbers
         '''
+        svn_dir = convert_curr_locale_to_unicode_str(svn_dir)
         # get all changesets
         url_path = '%s%s' % (self.repo_url, svn_dir)
         if start_rev:
@@ -273,7 +281,7 @@ class SvnPython(object):
 
         return revisions
 
-    def checkout_working_copy(self, svn_dir, revision=0, depth=None):
+    def checkout_working_copy(self, svn_dir, revision=0, depth=None, target_dir=None):
         '''checkout a working copy for svn_dir in self.ws_root
 
         If no revision given, we find and checkout the 1st revision of
@@ -291,20 +299,28 @@ class SvnPython(object):
             revisions = self.run_log(url_path, limit=1)
             revision = revisions[revision].revision.number
 
+        if not target_dir:
+            target_dir = self.wc_root
+
         url = '%s%s' % (self.repo_url, svn_dir)
         if depth:
             # call the command to get the job done
             cmd_args = "-r %s --depth %s %s '%s'" % (str(revision),
-                                                     depth, url, self.wc_root)
+                                                     depth, url, target_dir)
             sub_cmd = 'checkout'
-            self.run(sub_cmd, cmd_args)
+            self._run(sub_cmd, cmd_args)
         else:
             revision = pysvn.Revision(pysvn.opt_revision_kind.number,
                                       revision)
 
-            self.run_checkout(url, self.wc_root, revision=revision)
+            self.run_checkout(url, target_dir, revision=revision)
+
+    def run_info(self, paths):
+        paths = convert_curr_locale_to_unicode_str(paths)
+        return self.client.info(paths)
 
     def run_info2(self, paths, rev_num=None):
+        paths = convert_curr_locale_to_unicode_str(paths)
         revision = pysvn.Revision(pysvn.opt_revision_kind.head)
         if rev_num:
             revision = pysvn.Revision(pysvn.opt_revision_kind.number,
@@ -332,6 +348,8 @@ class SvnPython(object):
             return self.client.info2(paths, revision)
 
     def run_list(self, path, rev_num=None, peg_rev=None, depth=None):
+        path = convert_curr_locale_to_unicode_str(path)
+
         revision = pysvn.Revision(pysvn.opt_revision_kind.head)
         if rev_num:
             revision = pysvn.Revision(pysvn.opt_revision_kind.number, rev_num)
@@ -357,17 +375,38 @@ class SvnPython(object):
         files = convert_curr_locale_to_unicode_str(files)
         return self.client.add(files, *args, **kwargs)
 
+    def run_cmd_with_args(self, sub_cmd, args_str):
+        args_str = convert_curr_locale_to_unicode_str(args_str)
+        return self._run(sub_cmd, args_str)
+
     def run_move(self, from_file, to_file):
         from_file = convert_curr_locale_to_unicode_str(from_file)
         to_file = convert_curr_locale_to_unicode_str(to_file)
         return self.client.move(from_file, to_file)
+
+    def run_remove(self, filelist, *args, **kwargs):
+        filelist = convert_curr_locale_to_unicode_str(filelist)
+        return self.client.remove(filelist, *args, **kwargs)
 
     def run_checkin(self, files, desc):
         files = convert_curr_locale_to_unicode_str(files)
         desc =  convert_curr_locale_to_unicode_str(desc)
         return self.client.checkin(files, desc)
 
+    def run_propget(self, prop_name, file_path):
+        file_path = convert_curr_locale_to_unicode_str(file_path)
+        return self.client.propget(prop_name, file_path)
+
+    def run_propdel(self, prop_name, file_path):
+        file_path = convert_curr_locale_to_unicode_str(file_path)
+        return self.client.propdel(prop_name, file_path)
+
+    def run_propset(self, prop_name, prop_value, file_path):
+        file_path = convert_curr_locale_to_unicode_str(file_path)
+        return self.client.propset(prop_name, prop_value, file_path)
+
     def run_proplist(self, path, rev_num=None, peg_rev=None):
+        path = convert_curr_locale_to_unicode_str(path)
         revision = pysvn.Revision(pysvn.opt_revision_kind.working)
         if rev_num:
             revision = pysvn.Revision(pysvn.opt_revision_kind.number, rev_num)
@@ -385,7 +424,8 @@ class SvnPython(object):
                    update_arg=None):
         self.logger.debug('updating %s, %s' % (files_to_upd, update_arg))
 
-        if isinstance(files_to_upd, str):
+        files_to_upd = convert_curr_locale_to_unicode_str(files_to_upd)
+        if isinstance(files_to_upd, basestring):
             files_to_upd = [files_to_upd]
 
         if not revision:
@@ -400,13 +440,14 @@ class SvnPython(object):
         files_to_upd_single_quoted = ["'%s@%s'" % (f, peg_rev)
                                       for f, peg_rev in zip(files_to_upd, peg_revs)]
         files_to_upd_joined = ' '.join(files_to_upd_single_quoted)
+
         cmd_args = '-r %s --parents %s %s' % (str(revision),
                                               files_to_upd_joined,
                                               update_arg)
 
         sub_cmd = 'update'
         self.logger.info('updating %s' % cmd_args)
-        self.run(sub_cmd, cmd_args)
+        self._run(sub_cmd, cmd_args)
 
 
 if __name__ == '__main__':

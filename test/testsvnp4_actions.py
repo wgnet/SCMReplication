@@ -358,10 +358,10 @@ class SvnBasicActionRepTest(ReplicationTestCaseWithDocker):
             act_str = act_str_orig[:]
             with open(testfile, 'a') as f:
                 f.write(act_str.encode(encoding))
-            act_str = act_str.encode(encoding)
-            cmd = "--encoding %s -m '%s'" % (encoding, act_str)
-            svn.run('commit', cmd)
+            cmd = "-m '%s'" % act_str
+            svn._run('commit', cmd)
 
+            '''
             # more tests for utf-8
             encoding = 'utf-8'
             act_str = act_str_orig[:]
@@ -369,7 +369,8 @@ class SvnBasicActionRepTest(ReplicationTestCaseWithDocker):
                 f.write(act_str.encode(encoding))
             act_str = act_str.encode(encoding)
             cmd = "--encoding %s -m '%s'" % (encoding, act_str)
-            svn.run('commit', cmd)
+            svn.run_cmd_with_args('commit', cmd)
+            '''
 
     def svn_test_action_symbol_in_commitmsg(self, docker_cli, depot_dir, commit_msg):
         with get_svn_from_docker(docker_cli) as (svn, svn_root):
@@ -723,22 +724,24 @@ class SvnBasicActionRepTest(ReplicationTestCaseWithDocker):
                                    actions=actions,
                                    replicate_only_branch_dir=True)
 
-    def test_svn_action_rep_special_commitmsgs(self):
-        commitmsgs = {'utf-8':u'I think, therefore I am.',
-                      'cp1251':u'мыслю, следовательно существую.',
-                      'gb2312':u'我思故我在.',
-                      'latin1':u'La Santé',}
+    def gen_special_commitmsgs(self):
+        commit_msgs = {'utf-8':u'I think, therefore I am.',
+                       'cp1251':u'мыслю, следовательно существую.',}
+        import lib.localestring as liblocale
+        if liblocale.locale_encoding == "UTF-8":
+            commit_msgs.update({'gb2312':u'我思故我在.',
+                                'latin1':u'La Santé'})
+        return commit_msgs
 
+    def test_svn_action_rep_special_commitmsgs(self):
+        commitmsgs = self.gen_special_commitmsgs()
         for encoding, msg in commitmsgs.items():
             self.svn_action_rep_action(encoding,
                                        self.svn_test_action_commitmsg,
                                        commit_msg=[encoding, msg])
 
     def test_svn_action_rep_special_commitmsgs_unicodeserver(self):
-        commitmsgs = {'utf-8':u'I think, therefore I am.',
-                      'cp1251':u'мыслю, следовательно существую.',
-                      'gb2312':u'我思故我在.',
-                      'latin1':u'La Santé',}
+        commitmsgs = self.gen_special_commitmsgs()
         dst_docker_cli = self.docker_p4d_clients['unicode-server']
         set_p4d_unicode_mode(dst_docker_cli)
 

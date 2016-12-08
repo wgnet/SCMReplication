@@ -1,5 +1,9 @@
 #!/usr/bin/env python
 
+'''svn to p4 replication script
+'''
+
+
 import os
 import sys
 import tempfile

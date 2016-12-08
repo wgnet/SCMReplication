@@ -326,14 +326,14 @@ class ReplicationSvn(ReplicationSCM):
 
             sub_cmd = 'checkout'
             self.logger.info('checking out %s to %s' % (url, abs_todir))
-            out = self.svn.run(sub_cmd, cmd_args)
+            out = self.svn.run_cmd_with_args(sub_cmd, cmd_args)
             self.logger.info('checked out %s, %s' % (url, out))
             result = True
         except Exception, e:
             if 'is already a working copy for a different URL' in str(e):
                 self.logger.warning('%s failed, (%s), remove and retry' % (cmd_args, e))
                 shutil.rmtree(abs_todir)
-                self.svn.run(sub_cmd, cmd_args)
+                self.svn.run_cmd_with_args(sub_cmd, cmd_args)
             elif "doesn't exist" in str(e):
                 self.logger.error('Aborted, failed to checkout %s, %s' % (url, e))
             elif "E155004" in str(e) or "E155037" in str(e):
@@ -821,6 +821,7 @@ class ReplicationSvn(ReplicationSCM):
         desc = self.format_replicate_desc(desc, src_rev, src_srv,
                                           orig_submitter, orig_submit_time)
 
+        self.logger.info('svn run checkin desc: %s' % desc)
         new_rev = self.svn.run_checkin(files_to_submit, desc)
 
         if new_rev:

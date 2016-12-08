@@ -127,8 +127,9 @@ class SvnToP4(scm2scm.Replication):
             result = p4.run_add('-f', file_path_to_add)
             err_msg = 'already opened for delete'
             if any([err_msg in l for l in result]):
-                p4.run_revert('-k', file_path_to_add)
-                p4.run_edit('-k', file_path_to_add)
+                ascii_filename = ChangeRevision.convert_p4wildcard_to_ascii(file_path_to_add)
+                p4.run_revert('-k', ascii_filename)
+                p4.run_edit('-k', ascii_filename)
 
         # check directory
         if os.path.isdir(file_abspath):

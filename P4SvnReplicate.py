@@ -1,5 +1,8 @@
 #!/usr/bin/env python
 
+'''P4 to Svn replication script
+'''
+
 import os
 import sys
 import shutil
