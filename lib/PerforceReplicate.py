@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/python3
 # -*- coding: utf-8 -*-
 
 # PerforceReplicate.py
@@ -8,9 +8,9 @@
 # as possible the exact history of operations for every file.
 #
 
-###################################################################################
+##########################################################################
 # This script was based on PerforceTransfer.py.  Original copyright notice follows.
-###################################################################################
+##########################################################################
 # Copyright (c) 2011 Sven Erik Knop, Perforce Software Ltd
 #
 # Redistribution and use in source and binary forms, with or without
@@ -46,27 +46,29 @@
 import argparse
 import logging
 import os
+import re
 import sys
 import traceback
 from pprint import pformat
 
-from ConfigParser import ConfigParser
+from configparser import ConfigParser
 
-from buildlogger import getLogger
+from .buildlogger import getLogger
 from P4 import P4Exception
-from scmrep import ReplicationException
-from scmp4 import (ReplicationP4, ChangeRevision, RepP4Exception)
-import scm2scm
+from .scmp4 import (ReplicationP4, RepP4Exception)
+from . import scm2scm
 
-CONFIG='transfer.cfg'
+CONFIG = 'transfer.cfg'
 GENERAL_SECTION = 'general'
 SOURCE_SECTION = 'source'
 TARGET_SECTION = 'target'
 
 LOGGER_NAME = "transfer"
 
+
 class P4TransferException(scm2scm.ReplicationException):
     pass
+
 
 class P4Transfer(scm2scm.Replication):
 
@@ -79,12 +81,12 @@ class P4Transfer(scm2scm.Replication):
         self.create_scms()
 
         # default replication info to be added in description of new changes
-        rep_info_formatter = 'Automated import from perforce ' \
-                             'change {revision} from {srcserver}'
-        rep_info_extracter = 'Automated import from perforce ' \
-                             'change (?P<revision>[0-9]+) from (?P<srcserver>.+)'
-        self.target.set_desc_rep_info_pattern(rep_info_formatter,
-                                              rep_info_extracter)
+        # rep_info_formatter = 'Automated import from perforce ' \
+        #                     'change {revision} from {srcserver}'
+        # rep_info_extracter = 'Automated import from perforce ' \
+        #                     'change (?P<revision>[0-9]+) from (?P<srcserver>.+)'
+        # self.target.set_desc_rep_info_pattern(rep_info_formatter,
+        #                                      rep_info_extracter)
 
     def parse_cli_arguments(self):
         parser = argparse.ArgumentParser(
@@ -98,20 +100,35 @@ class P4Transfer(scm2scm.Replication):
                             help="Default is " + CONFIG)
         parser.add_argument('-m', '--maximum', default=None, type=int,
                             help="maximum number of changes to transfer")
-        parser.add_argument('-v', '--verbose', nargs='?',
-                            const="INFO", default="WARNING",
-                            choices=('DEBUG', 'WARNING', 'INFO', 'ERROR', 'FATAL') ,
-                            help="Various levels of debug output")
+        parser.add_argument('--base', action='store_true',
+                            help="Add all files from the source to an empty destination")
+        parser.add_argument(
+            '-v',
+            '--verbose',
+            nargs='?',
+            const="INFO",
+            default="WARNING",
+            choices=(
+                'DEBUG',
+                'WARNING',
+                'INFO',
+                'ERROR',
+                'FATAL'),
+            help="Various levels of debug output")
         parser.add_argument('-ni', '--nointegrate', action='store_true')
         parser.add_argument('-am', '--allowmerge', action='store_true')
-        parser.add_argument('--replicate-user-and-timestamp', action='store_true',
-                            help='Enable replication of user and timestamp '\
-                            'of source changelist. NOTE! needs "admin" ' \
-                            'access for this operation')
-        parser.add_argument('--prefix-description-with-replication-info',
-                            action='store_true',
-                            help=('if set, add replication info before original'
-                                  ' description. by default, after it'))
+        parser.add_argument(
+            '--replicate-user-and-timestamp',
+            action='store_true',
+            help='Enable replication of user and timestamp '
+            'of source changelist. NOTE! needs "admin" '
+            'access for this operation')
+        parser.add_argument(
+            '--prefix-description-with-replication-info',
+            action='store_true',
+            help=(
+                'if set, add replication info before original'
+                ' description. by default, after it'))
 
         return parser.parse_args()
 
@@ -147,6 +164,29 @@ class P4Transfer(scm2scm.Replication):
             msg = 'src/dst workspace root directories must be the same'
             raise P4TransferException(msg)
 
+    def get_latest_revision(self, src_p4, filename):
+        self.logger.info("This is the filename: %s" % filename)
+        try:
+            revision_line = src_p4.run('files', filename)
+        except P4Exception as e:
+            self.logger.error(e)
+        revision_number = revision_line[0]['rev']
+        self.logger.info("Revision number is %s" % revision_number)
+        return revision_number
+
+    def ignoring_purged_revision(self, src_p4, change_rev):
+        if re.search(r'\+.*S', change_rev.type):
+            resultado = re.match(r'.*\+.*S(\d+)', change_rev.type)
+            if resultado:
+                allowed_revisions = int(resultado.group(1))
+            else:
+                allowed_revisions = 1
+            revisions = int(change_rev.rev)
+            latest_revision = int(self.get_latest_revision(src_p4, change_rev.localFile))
+            if revisions <= latest_revision - allowed_revisions:
+                return True
+        return False
+
     def replication_sanity_check(self, src_p4, dst_p4,
                                  src_change_revs, dst_changelist):
         '''replication sanity check
@@ -167,44 +207,58 @@ class P4Transfer(scm2scm.Replication):
         if src_p4.is_unicode_server() != dst_p4.is_unicode_server():
             return
 
-        self.logger.info('Veirfying changelist %s' % dst_changelist)
+        self.logger.info('Verifying changelist %s' % dst_changelist)
         dst_describe = dst_p4.run_describe(dst_changelist)[0]
 
+        changes_to_ignore = len([x for x in src_change_revs if self.ignoring_purged_revision(src_p4, x)])
+        self.logger.info("Listing changes to ignore %s" % changes_to_ignore)
         src_depotfiles = ['%s#%s' % (src_change.depotFile, src_change.rev)
                           for src_change in src_change_revs
-                          if (self.source.file_in_workspace(src_change.localFile) and
-                              self.target.file_in_workspace(src_change.localFile))]
+                          if (self.source.file_in_workspace(src_change.localFile) and self.target.file_in_workspace(src_change.localFile))]
         dst_depotfiles = ['%s#head' % fn for fn in dst_describe['depotFile']]
 
         src_fstats = src_p4.run_fstat('-Ol', '-m1', *src_depotfiles)
         dst_fstats = dst_p4.run_fstat('-Ol', '-m1', *dst_depotfiles)
 
-        src_digests = [(os.path.split(self.source.localmap.translate(fv.get('depotFile')))[1], fv.get('digest'))
-                       for fv in src_fstats]
-        dst_digests = [(os.path.split(self.target.localmap.translate(fv.get('depotFile')))[1], fv.get('digest'))
-                       for fv in dst_fstats]
-        src_digests = filter(lambda d: d[1], src_digests)
-        dst_digests = filter(lambda d: d[1], dst_digests)
+        src_digests = [
+            (os.path.split(
+                self.source.localmap.translate(
+                    fv.get('depotFile')))[1],
+                fv.get('digest')) for fv in src_fstats]
+        dst_digests = [
+            (os.path.split(
+                self.target.localmap.translate(
+                    fv.get('depotFile')))[1],
+                fv.get('digest')) for fv in dst_fstats]
+        src_digests = [d for d in src_digests if d[1]]
+        dst_digests = [d for d in dst_digests if d[1]]
         src_digests.sort()
         dst_digests.sort()
 
         if src_digests != dst_digests:
-            # everything
-            msg = '\nsrc digests %s != \ndst digests %s\n' % (pformat(src_digests),
-                                                              pformat(dst_digests))
-            self.logger.error(msg)
-            # diff
-            src_digest_set = set(src_digests)
-            dst_digest_set = set(dst_digests)
-            src_diff = src_digest_set - dst_digest_set
-            dst_diff = dst_digest_set - src_digest_set
-            msg = '\nsrc digests %s != \ndst digests %s\n' % (pformat(src_diff),
-                                                              pformat(dst_diff))
-            self.logger.error(msg)
+            distinct_digest = len(set(src_digests) - set(dst_digests))
+            self.logger.info("The number of changes to ignore is: %s" % changes_to_ignore)
+            if distinct_digest != changes_to_ignore:
+                self.logger.info("The number of changes to ignore is out of range")
+                # everything
+                # ignore case difference
+                src_digests = [(d[0].lower(), d[1]) for d in src_digests]
+                dst_digests = [(d[0].lower(), d[1]) for d in dst_digests]
+                if src_digests != dst_digests:
+                    msg = '\nsrc digests %s != \ndst digests %s\n' % (pformat(src_digests),
+                                                                      pformat(dst_digests))
+                    self.logger.error(msg)
+                    # diff
+                    src_digest_set = set(src_digests)
+                    dst_digest_set = set(dst_digests)
+                    src_diff = src_digest_set - dst_digest_set
+                    dst_diff = dst_digest_set - src_digest_set
+                    msg = '\nsrc digests %s != \ndst digests %s\n' % (pformat(src_diff), pformat(dst_diff))
+                    self.logger.error(msg)
 
-            msg = 'Please verify and obliterate ' \
-                  'changelist %s if it is not a false negative' % dst_changelist
-            raise RepP4Exception(msg)
+                    msg = 'Please verify and obliterate ' \
+                          'changelist %s if it is not a false negative' % dst_changelist
+                    raise RepP4Exception(msg)
 
         self.logger.info("Verified p4 changelist %s" % dst_changelist)
 
@@ -230,7 +284,6 @@ class P4Transfer(scm2scm.Replication):
 
         self.target.src_p4 = self.source.p4
 
-
     def replicate(self):
         '''performs the replication between src and target
         '''
@@ -240,31 +293,38 @@ class P4Transfer(scm2scm.Replication):
 
         num_changes = len(p4_changes)
         p4_change_nums = [p['change'] for p in p4_changes]
+
+        if self.cli_arguments.base:
+            self.logger.info('Sync source to : %s' % self.source.counter)
+            self.source.sync_to_change(self.source.counter)
+            self.target.add_base(self.source.counter, self.source.get_base_change_to_replicate(), self.source)
+            return p4_change_nums
+
         self.logger.info('Changes to replicate: %s' % p4_change_nums)
 
         if self.cli_arguments.dry_run:
             self.source.disconnect()
             self.target.disconnect()
             return p4_change_nums
-
         try:
             for idx, p4_change in enumerate(p4_changes):
                 src_changelist = p4_change['change']
                 self.logger.info('Replicating : %s' % src_changelist)
 
                 # get it, replicate it
-                self.source.sync_to_change(src_changelist)
-                change_files = self.source.get_change(src_changelist)
-                resultedChange = self.target.replicate_change(change_files,
-                                                              p4_change,
-                                                              self.source.p4.port)
+                sync_result = self.source.sync_to_change(src_changelist)
+                change_files = self.source.get_change(
+                    src_changelist, sync_result)
+                resultedChange = self.target.replicate_change(
+                    src_changelist, change_files, p4_change, self.source)
 
                 msg = "Replicated : %s -> %s, %d of %d" % (src_changelist,
                                                            resultedChange,
-                                                           idx+1,
+                                                           idx + 1,
                                                            num_changes)
                 self.logger.info(msg)
 
+                self.logger.info("List of files to be changed: %s", change_files)
                 # sanity check
                 self.replication_sanity_check(self.source.p4, self.target.p4,
                                               change_files, resultedChange)

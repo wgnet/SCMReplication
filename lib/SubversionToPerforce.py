@@ -1,7 +1,9 @@
-#!/usr/bin/env python
+#!/usr/bin/python3
 # -*- coding: utf-8 -*-
 
 '''Svn to p4 replication script
+
+https://confluence.wargaming.net/display/WA/3.1.2+WGRepo+-+SVN+Publishing+Tool
 
 This script will do an SVN update and submit the changes to perforce
 run this script from your working directory
@@ -14,18 +16,17 @@ import shutil
 import stat
 import traceback
 
-from ConfigParser import ConfigParser
+from configparser import ConfigParser
 
-from buildlogger import getLogger
-from buildcommon import (working_in_dir, remove_dir_contents,
-                         sleep_until_interrupted)
-from scmp4 import ReplicationP4, ChangeRevision, RepP4Exception
-from scmsvn import ReplicationSvn, RepSvnException
-import scm2scm
+from .buildlogger import getLogger
+from .buildcommon import working_in_dir
+from .scmp4 import ReplicationP4, ChangeRevision
+from .scmsvn import ReplicationSvn
+from . import scm2scm
 
-from svn2p4template import (SOURCE_SECTION,
-                            TARGET_SECTION,
-                            writeTemplateConfig)
+from .svn2p4template import (SOURCE_SECTION,
+                             TARGET_SECTION,
+                             writeTemplateConfig)
 
 
 class SvnToP4Exception(scm2scm.ReplicationException):
@@ -35,6 +36,7 @@ class SvnToP4Exception(scm2scm.ReplicationException):
 class SvnToP4(scm2scm.Replication):
     '''Subversion to perforce replication class
     '''
+
     def __init__(self):
         self.parse_cli_arguments()
         self.setup_logger()
@@ -58,8 +60,11 @@ class SvnToP4(scm2scm.Replication):
             epilog="Copyright (C) 2015 CTG Austin, Wargaming.net"
         )
 
-        cli_parser.add_argument('-c', '--config', required=True,
-                                help="Use --template-config to create a sample config")
+        cli_parser.add_argument(
+            '-c',
+            '--config',
+            required=True,
+            help="Use --template-config to create a sample config")
         cli_parser.add_argument('-m', '--maximum', default=None, type=int,
                                 help="maximum number of changes to transfer")
         cli_parser.add_argument('-v', '--verbose', nargs='?',
@@ -67,21 +72,25 @@ class SvnToP4(scm2scm.Replication):
                                 choices=('DEBUG', 'INFO', 'WARNING',
                                          'ERROR', 'CRITICAL'),
                                 help="Various levels of debug output")
-        cli_parser.add_argument('--prefix-description-with-replication-info',
-                                action='store_true',
-                                help=('if set, add replication info before original'
-                                      ' description. by default, after it'))
+        cli_parser.add_argument(
+            '--prefix-description-with-replication-info',
+            action='store_true',
+            help=(
+                'if set, add replication info before original'
+                ' description. by default, after it'))
         cli_parser.add_argument('--template-config', action='store_true',
                                 help="Write a template config file and exit")
         cli_parser.add_argument('-n', '--dry-run', action='store_true',
                                 help="Preview only, no transfer")
         cli_parser.add_argument('--svn-ignore-externals', action='store_true',
                                 help="ignore externals when svn-updating")
-        cli_parser.add_argument('--replicate-user-and-timestamp',
-                                action='store_true',
-                                help=('Enable replication of user and timestamp '
-                                'of source changelist. NOTE! needs "admin" '
-                                'access for this operation'))
+        cli_parser.add_argument(
+            '--replicate-user-and-timestamp',
+            action='store_true',
+            help=(
+                'Enable replication of user and timestamp '
+                'of source changelist. NOTE! needs "admin" '
+                'access for this operation'))
 
         self.cli_arguments = cli_parser.parse_args()
         # assure config file path
@@ -123,11 +132,15 @@ class SvnToP4(scm2scm.Replication):
         file_abspath, file_p4fixed = file_path
         p4 = self.target.p4
 
-        def p4_run_add(file_path_to_add):
-            result = p4.run_add('-f', file_path_to_add)
+        def p4_run_add(file_path_to_add, is_link=False):
+            if is_link:
+                result = p4.run_add('-f', '-t', 'symlink', file_path_to_add)
+            else:
+                result = p4.run_add('-f', file_path_to_add)
             err_msg = 'already opened for delete'
             if any([err_msg in l for l in result]):
-                ascii_filename = ChangeRevision.convert_p4wildcard_to_ascii(file_path_to_add)
+                ascii_filename = ChangeRevision.convert_p4wildcard_to_ascii(
+                    file_path_to_add)
                 p4.run_revert('-k', ascii_filename)
                 p4.run_edit('-k', ascii_filename)
 
@@ -139,9 +152,11 @@ class SvnToP4(scm2scm.Replication):
 
                 for name in names:
                     file_in_dir = os.path.join(walk_root, name)
-                    p4_run_add(file_in_dir)
-        elif os.path.isfile(file_abspath) or os.path.islink(file_abspath):
+                    p4_run_add(file_in_dir, os.path.islink(file_in_dir))
+        elif os.path.isfile(file_abspath):
             p4_run_add(file_abspath)
+        elif os.path.islink(file_abspath):
+            p4_run_add(file_abspath, is_link=True)
         else:
             self.logger.error('%s doesnot exist' % file_abspath)
 
@@ -242,19 +257,21 @@ class SvnToP4(scm2scm.Replication):
             self.logger.warning(msg)
             return
 
-        changed_paths = sorted(changed_paths,
-                               key=lambda cp: 0 if self.decode_revision(cp)[0] == 'R' else 1)
+        changed_paths = sorted(
+            changed_paths,
+            key=lambda cp: 0 if self.decode_revision(cp)[0] == 'R' else 1)
         for changed_path in changed_paths:
             action, file_abspath = self.decode_revision(changed_path)
 
             if not self.target.file_in_workspace(file_abspath):
                 continue
 
-            file_p4fixed = ChangeRevision.convert_p4wildcard_to_ascii(file_abspath)
+            file_p4fixed = ChangeRevision.convert_p4wildcard_to_ascii(
+                file_abspath)
 
             self.logger.debug('%s %s' % (action, file_abspath))
             file_path = (file_abspath, file_p4fixed)
-            
+
             if action == 'A':
                 self.p4_process_action_add(file_path)
             elif action == 'M':
@@ -353,10 +370,10 @@ class SvnToP4(scm2scm.Replication):
                 p4_change = self.p4_replicate_change(svn_rev_log)
 
                 self.logger.info('Replicated : %d -> %s, %d of %d' % (
-                    rev_num, p4_change, idx+1, num_revisions_to_rep))
+                    rev_num, p4_change, idx + 1, num_revisions_to_rep))
 
                 self.source.cleanup_externals()
-        except (SvnToP4Exception, RepP4Exception, RepSvnException) as e:
+        except Exception as e:
             self.logger.error(e)
             self.logger.error(traceback.format_exc())
             raise
@@ -365,6 +382,7 @@ class SvnToP4(scm2scm.Replication):
             self.target.revertChanges()
 
         return svn_revs
+
 
 def SubversionToPerforce():
     svntop4 = SvnToP4()
@@ -376,6 +394,6 @@ def SubversionToPerforce():
     with working_in_dir(svntop4.source.get_root_folder()):
         return svntop4.replicate()
 
+
 if __name__ == "__main__":
     SubversionToPerforce()
-

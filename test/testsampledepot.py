@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/python3
 
 '''test replication of depots in perforce sampledepot.
 
@@ -18,7 +18,7 @@ Structure of the Sample Depot
         //HR
     Miscellaneous Shared Files
         //depot/Misc
- 
+
 Software Development Branching Methodology
 Ongoing development work occurs in the MAIN or trunk branch under each
 software project's name.  Branches might be created for feature
@@ -46,6 +46,7 @@ logger = getLogger(__name__)
 class SampleDepotTest(ReplicationTestCaseWithDocker):
 
     def replicate_sample_dir_withdocker(self, depot_dir):
+        logger.info("TESTSAMPLEDEPOT")
         replicate_sample_dir(depot_dir,
                              src_docker_cli=self.docker_clients[0],
                              dst_docker_cli=self.docker_clients[1])
@@ -124,7 +125,7 @@ class SampleDepotTest(ReplicationTestCaseWithDocker):
         test_case = 'replicate_sample_HR'
 
         depot_dir = '/HR'
-        self.replicate_sample_dir_withdocker(depot_dir)        
+        self.replicate_sample_dir_withdocker(depot_dir)
 
         logger.passed(test_case)
 
@@ -193,4 +194,3 @@ failed_tests.addTest(SampleDepotTest('test_replicate_sample_pb'))
 
 if __name__ == '__main__':
     unittest.main()
-

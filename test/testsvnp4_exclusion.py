@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/python3
 # -*- coding: utf-8 -*-
 
 '''test replication of svn depot from to p4 with exclusion
@@ -76,17 +76,12 @@ $ cd trunk; tree -L 3
 
 import os
 import unittest
-import tempfile
 
-from testcommon import (obliterate_all_depots,
-                        BuildTestException,
-                        get_p4d_from_docker,)
-from lib.buildcommon import (generate_random_str, )
+from testcommon import obliterate_all_depots
 from replicationunittest import ReplicationTestCaseWithDocker
 
 from testcommon_svnp4 import (replicate_SvnP4Replicate,
                               verify_replication,
-                              get_svn_rev_list,
                               get_svn_from_docker,
                               svn_test_action_actions,)
 
@@ -98,17 +93,17 @@ class SvnExclusionRepTest(ReplicationTestCaseWithDocker):
     def setUp(self):
         '''Obliterate all p4 depots due to file number limit of trial license
         '''
-        dst_docker_cli=self.docker_p4d_clients['p4d_0']
+        dst_docker_cli = self.docker_p4d_clients['p4d_0']
         obliterate_all_depots(dst_docker_cli)
 
     def svn_exclusion_construct_source_repos(self, src_depot_dir):
-        logger.info('testing %s' % src_depot_dir)
+        logger.info('testing %s', src_depot_dir)
 
         # create svn repo tree
-        actions=['edit', 'rename', 'delete_file', 'add_exec',
-                 'add_dir', 'edit', 'add_exec',
-                 'add_dir', 'edit', 'add_exec',
-                 'add_dir', 'edit',]
+        actions = ['edit', 'rename', 'delete_file', 'add_exec',
+                   'add_dir', 'edit', 'add_exec',
+                   'add_dir', 'edit', 'add_exec',
+                   'add_dir', 'edit', ]
 
         src_docker_cli = self.docker_svn_clients['svn_0']
         dst_docker_cli = self.docker_p4d_clients['p4d_0']
@@ -116,27 +111,27 @@ class SvnExclusionRepTest(ReplicationTestCaseWithDocker):
         init_external_cfg = [
             '^/bigtop/branches/hadoop-0.23/bigtop-deploy deploy',
             '^/bigtop/branches/hadoop-0.23/bigtop-tests tests',
-            '^/bigtop/branches/hadoop-0.23/src/site hadoop_src',]
+            '^/bigtop/branches/hadoop-0.23/src/site hadoop_src', ]
 
         mod_external_cfgs = [
-            [# remove tests
-             '^/bigtop/branches/hadoop-0.23/bigtop-deploy deploy',
-             '^/bigtop/branches/hadoop-0.23/src/site hadoop_src',
+            [  # remove tests
+                '^/bigtop/branches/hadoop-0.23/bigtop-deploy deploy',
+                '^/bigtop/branches/hadoop-0.23/src/site hadoop_src',
             ],
 
-            [# add tests back
-             '^/bigtop/branches/hadoop-0.23/bigtop-deploy deploy',
-             '^/bigtop/branches/hadoop-0.23/bigtop-tests tests',
-             '^/bigtop/branches/hadoop-0.23/src/site hadoop_src',
+            [  # add tests back
+                '^/bigtop/branches/hadoop-0.23/bigtop-deploy deploy',
+                '^/bigtop/branches/hadoop-0.23/bigtop-tests tests',
+                '^/bigtop/branches/hadoop-0.23/src/site hadoop_src',
             ],
 
-            [# relocate hadoop_src
-             '^/bigtop/branches/hadoop-0.23/src/site hadoop/hadoop_src',
+            [  # relocate hadoop_src
+                '^/bigtop/branches/hadoop-0.23/src/site hadoop/hadoop_src',
             ],
 
-            [# relocate hadoop_src
-             '^/bigtop/branches/hadoop-0.23/src/site hadoop_src',
-             '^/bigtop/branches/hadoop-0.23/bigtop-tests tests',
+            [  # relocate hadoop_src
+                '^/bigtop/branches/hadoop-0.23/src/site hadoop_src',
+                '^/bigtop/branches/hadoop-0.23/bigtop-tests tests',
             ],
         ]
 
@@ -148,7 +143,8 @@ class SvnExclusionRepTest(ReplicationTestCaseWithDocker):
             svn.run_update(project_abs_dir, update_arg='--depth infinity')
             trunk_dir = os.path.join(project_abs_dir, 'trunk')
 
-            for idx, dir_name in enumerate(['test_dir_parent', 'test_dir_parent_1', ]):
+            for idx, dir_name in enumerate(
+                    ['test_dir_parent', 'test_dir_parent_1', ]):
                 trunk_parent = os.path.join(trunk_dir, dir_name)
                 os.mkdir(trunk_parent)
 
@@ -176,7 +172,13 @@ class SvnExclusionRepTest(ReplicationTestCaseWithDocker):
                 '''add
                 test_dir_parent/{a.exe, b.exe, a.json, b.json, a.txt, b.txt}
                 '''
-                for fn in ['a.exe', 'b.exe', 'a.json', 'b.json', 'a.txt', 'b.txt']:
+                for fn in [
+                    'a.exe',
+                    'b.exe',
+                    'a.json',
+                    'b.json',
+                    'a.txt',
+                        'b.txt']:
                     file_path = os.path.join(trunk_parent, fn)
                     with open(file_path, 'wt') as f:
                         f.write('my name is %s' % fn)
@@ -184,8 +186,10 @@ class SvnExclusionRepTest(ReplicationTestCaseWithDocker):
                 # add svn:externals
                 # test_dir_parent/bigtop-deploy
                 if idx == 0:
-                    svn.propset('svn:externals', '\n'.join(init_external_cfg),
-                                trunk_parent)
+                    svn.client.propset(
+                        'svn:externals',
+                        '\n'.join(init_external_cfg),
+                        trunk_parent)
                 svn.run_checkin(trunk_parent, 'adding %s' % trunk_parent)
 
                 # edit test_dir_parent/a.exe
@@ -199,8 +203,10 @@ class SvnExclusionRepTest(ReplicationTestCaseWithDocker):
                 # test_dir_parent/bigtop-deploy
                 if idx == 1:
                     svn.run_update(trunk_parent, update_arg='--depth infinity')
-                    svn.propset('svn:externals', '\n'.join(init_external_cfg),
-                                trunk_parent)
+                    svn.client.propset(
+                        'svn:externals',
+                        '\n'.join(init_external_cfg),
+                        trunk_parent)
                     svn.run_checkin(trunk_parent, 'adding externals')
 
                 # edit test_dir_parent/b.json
@@ -212,8 +218,8 @@ class SvnExclusionRepTest(ReplicationTestCaseWithDocker):
 
                 for ext_cfg in mod_external_cfgs:
                     svn.run_update(trunk_parent, update_arg='--depth infinity')
-                    svn.propset('svn:externals', '\n'.join(ext_cfg),
-                                trunk_parent)
+                    svn.client.propset('svn:externals', '\n'.join(ext_cfg),
+                                       trunk_parent)
                     svn.run_checkin(trunk_parent,
                                     'changing externals: %s' % str(ext_cfg))
 
@@ -222,7 +228,6 @@ class SvnExclusionRepTest(ReplicationTestCaseWithDocker):
                     with open(testfile, 'a') as f:
                         f.write(action)
                     svn.run_checkin(testfile, '%s' % action)
-
 
             testfile = os.path.join(trunk_dir, 'a.txt')
             action = 'editing %s\n' % testfile
@@ -251,8 +256,8 @@ class SvnExclusionRepTest(ReplicationTestCaseWithDocker):
             exclude_path = '-%s' % exclude_path
             src_mapping = ((src_depot_dir, ' '), (exclude_path, ' '))
 
-            verification_exclude = exclude_path[len('-')+len(src_depot_dir):]
-            exclude_subdir = [verification_exclude,]
+            verification_exclude = exclude_path[len('-') + len(src_depot_dir):]
+            exclude_subdir = [verification_exclude, ]
 
             replicate_SvnP4Replicate(src_mapping, dst_mapping,
                                      src_docker_cli, dst_docker_cli)
@@ -260,6 +265,7 @@ class SvnExclusionRepTest(ReplicationTestCaseWithDocker):
                                src_docker_cli, dst_docker_cli,
                                excluded_subdirs=exclude_subdir)
             obliterate_all_depots(dst_docker_cli)
+
 
     def test_svn_action_rep_view_mapping_exclude_external_subdirs(self):
         '''Exclude a whole external: test_dir_parent/deploy
@@ -279,8 +285,8 @@ class SvnExclusionRepTest(ReplicationTestCaseWithDocker):
             exclude_path = '-%s/deploy' % exclude_path
             src_mapping = ((src_depot_dir, ' '), (exclude_path, ' '))
 
-            verification_exclude = exclude_path[len('-')+len(src_depot_dir):]
-            exclude_subdir = [verification_exclude,]
+            verification_exclude = exclude_path[len('-') + len(src_depot_dir):]
+            exclude_subdir = [verification_exclude, ]
 
             replicate_SvnP4Replicate(src_mapping, dst_mapping,
                                      src_docker_cli, dst_docker_cli)
@@ -310,8 +316,12 @@ class SvnExclusionRepTest(ReplicationTestCaseWithDocker):
             src_mapping = ((src_depot_dir, ' '), (exclude_dir, ' '),
                            (include_dir, ' '),)
 
-            verification_exclude = exclude_dir[len('-')+len(src_depot_dir):]
-            exclude_subdir = [os.path.join(verification_exclude, 'test-execution'),]
+            verification_exclude = exclude_dir[len('-') + len(src_depot_dir):]
+            exclude_subdir = [
+                os.path.join(
+                    verification_exclude,
+                    'test-execution'),
+            ]
 
             replicate_SvnP4Replicate(src_mapping, dst_mapping,
                                      src_docker_cli, dst_docker_cli)
@@ -349,8 +359,8 @@ class SvnExclusionRepTest(ReplicationTestCaseWithDocker):
                                          'xdoc/issue-tracking.xml',
                                          'xdoc/mail-lists.xml',
                                          'xdoc/release-notes.xml',
-                                         'xdoc/team-list.xml',]
-            excluded_files = [os.path.join(exclude_path[len(src_depot_dir)+1:],
+                                         'xdoc/team-list.xml', ]
+            excluded_files = [os.path.join(exclude_path[len(src_depot_dir) + 1:],
                                            'hadoop_src/%s' % fn)
                               for fn in external_files_to_exclude]
 
@@ -389,8 +399,8 @@ class SvnExclusionRepTest(ReplicationTestCaseWithDocker):
                                          'xdoc/issue-tracking.xml',
                                          'xdoc/mail-lists.xml',
                                          'xdoc/release-notes.xml',
-                                         'xdoc/team-list.xml',]
-            excluded_files = [os.path.join(exclude_path[len(src_depot_dir)+1:],
+                                         'xdoc/team-list.xml', ]
+            excluded_files = [os.path.join(exclude_path[len(src_depot_dir) + 1:],
                                            'hadoop/hadoop_src/%s' % fn)
                               for fn in external_files_to_exclude]
 
@@ -399,7 +409,6 @@ class SvnExclusionRepTest(ReplicationTestCaseWithDocker):
             verify_replication(src_mapping, dst_mapping, src_docker_cli,
                                dst_docker_cli, excluded_files=excluded_files)
             obliterate_all_depots(dst_docker_cli)
-
 
     def test_svn_action_rep_view_mapping_exclude_certain_file_0(self):
         '''Exclude test_dir_parent/a.*
@@ -420,8 +429,8 @@ class SvnExclusionRepTest(ReplicationTestCaseWithDocker):
             src_mapping = ((src_depot_dir, ' '),
                            (exclude_mapping, ' '))
 
-            excluded_files = [os.path.join(exclude_path[len(src_depot_dir)+1:], fn)
-                              for fn in ['a.exe', 'a.json', 'a.txt',]]
+            excluded_files = [os.path.join(exclude_path[len(
+                src_depot_dir) + 1:], fn) for fn in ['a.exe', 'a.json', 'a.txt', ]]
 
             replicate_SvnP4Replicate(src_mapping, dst_mapping,
                                      src_docker_cli, dst_docker_cli)
@@ -448,9 +457,9 @@ class SvnExclusionRepTest(ReplicationTestCaseWithDocker):
             src_mapping = ((src_depot_dir, ' '),
                            (exclude_mapping, ' '))
 
-            excluded_files = [os.path.join(exclude_path[len(src_depot_dir)+1:], fn)
+            excluded_files = [os.path.join(exclude_path[len(src_depot_dir) + 1:], fn)
                               for fn in ['a.exe', 'b.exe', 'c.exe/a.json',
-                                         'c.exe/a.txt', 'c.exe/b.txt',]]
+                                         'c.exe/a.txt', 'c.exe/b.txt', ]]
 
             replicate_SvnP4Replicate(src_mapping, dst_mapping,
                                      src_docker_cli, dst_docker_cli)
@@ -479,10 +488,10 @@ class SvnExclusionRepTest(ReplicationTestCaseWithDocker):
                            (exclude_mapping_0, ' '),
                            (exclude_mapping_1, ' '),)
 
-            excluded_files = [os.path.join(exclude_path[len(src_depot_dir)+1:], fn)
+            excluded_files = [os.path.join(exclude_path[len(src_depot_dir) + 1:], fn)
                               for fn in ['a.exe', 'b.exe', 'c.exe/a.json',
                                          'c.exe/a.txt', 'c.exe/b.txt',
-                                         'some_dir/c.exe',]]
+                                         'some_dir/c.exe', ]]
 
             replicate_SvnP4Replicate(src_mapping, dst_mapping,
                                      src_docker_cli, dst_docker_cli)
@@ -508,9 +517,9 @@ class SvnExclusionRepTest(ReplicationTestCaseWithDocker):
             exclude_mapping = '-%s/some_dir' % exclude_path
             src_mapping = ((src_depot_dir, ' '),
                            (exclude_mapping, ' '),)
-            excluded_files = [os.path.join(exclude_path[len(src_depot_dir)+1:], fn)
+            excluded_files = [os.path.join(exclude_path[len(src_depot_dir) + 1:], fn)
                               for fn in ['some_dir/a.json', 'some_dir/a.txt',
-                                         'some_dir/b.txt', 'some_dir/c.exe',]]
+                                         'some_dir/b.txt', 'some_dir/c.exe', ]]
 
             replicate_SvnP4Replicate(src_mapping, dst_mapping,
                                      src_docker_cli, dst_docker_cli)
@@ -538,8 +547,8 @@ class SvnExclusionRepTest(ReplicationTestCaseWithDocker):
             src_mapping = ((src_depot_dir, ' '),
                            (exclude_mapping, ' '),
                            (include_mapping, ' '),)
-            excluded_files = [os.path.join(exclude_path[len(src_depot_dir)+1:], fn)
-                              for fn in ['a.exe', 'c.exe/a.json', 'c.exe/a.txt', 'c.exe/b.txt',]]
+            excluded_files = [os.path.join(exclude_path[len(src_depot_dir) + 1:], fn)
+                              for fn in ['a.exe', 'c.exe/a.json', 'c.exe/a.txt', 'c.exe/b.txt', ]]
 
             replicate_SvnP4Replicate(src_mapping, dst_mapping,
                                      src_docker_cli, dst_docker_cli)
@@ -547,7 +556,6 @@ class SvnExclusionRepTest(ReplicationTestCaseWithDocker):
                                dst_docker_cli, excluded_files=excluded_files)
 
             obliterate_all_depots(dst_docker_cli)
-
 
     def test_svn_action_rep_sample_mapping_exclude_subdir(self):
         '''Exclude a subdirectory from sample svn repo
@@ -567,7 +575,7 @@ class SvnExclusionRepTest(ReplicationTestCaseWithDocker):
         src_mapping = ((src_depot_dir, ' '),
                        (exclude_mapping, ' '),)
 
-        exclude_dirs = ['bigtop-packages',]
+        exclude_dirs = ['bigtop-packages', ]
         replicate_SvnP4Replicate(src_mapping, dst_mapping,
                                  src_docker_cli, dst_docker_cli)
         verify_replication(src_mapping, dst_mapping, src_docker_cli,
@@ -594,14 +602,15 @@ class SvnExclusionRepTest(ReplicationTestCaseWithDocker):
                        (exclude_mapping_0, ' '),
                        (exclude_mapping_1, ' '),)
 
-        exclude_dirs = [exclude_path_0[len(src_depot_dir)+1:],
-                        exclude_path_1[len(src_depot_dir)+1:],]
+        exclude_dirs = [exclude_path_0[len(src_depot_dir) + 1:],
+                        exclude_path_1[len(src_depot_dir) + 1:], ]
         replicate_SvnP4Replicate(src_mapping, dst_mapping,
                                  src_docker_cli, dst_docker_cli)
         verify_replication(src_mapping, dst_mapping, src_docker_cli,
                            dst_docker_cli, excluded_subdirs=exclude_dirs)
 
-    def test_svn_action_rep_sample_mapping_exclude_recursively_same_suffix(self):
+    def test_svn_action_rep_sample_mapping_exclude_recursively_same_suffix(
+            self):
         '''Exclude files with same suffix from sample svn repo
         '''
         test_case = 'svn_action_rep_sample_mapping_exclude_recursively_same_suffix'
@@ -634,14 +643,14 @@ class SvnExclusionRepTest(ReplicationTestCaseWithDocker):
         test-artifacts/sqoop-smokes/src/main/resources/mysql-files/sqoop-null-non-string.out
         test-artifacts/sqoop-smokes/src/main/resources/mysql-files/sqoop-append.out
         test-artifacts/sqoop-smokes/src/main/resources/mysql-files/sqoop-t_int.out'''
-        excluded_files = [os.path.join(exclude_path[len(src_depot_dir)+1:], fn.strip())
-                          for fn in rel_exc_files.split('\n')]
-        logger.error('excluded_files: %s' % excluded_files)
+        excluded_files = [os.path.join(exclude_path[len(
+            src_depot_dir) + 1:], fn.strip()) for fn in rel_exc_files.split('\n')]
+        logger.error('excluded_files: %s', excluded_files)
         replicate_SvnP4Replicate(src_mapping, dst_mapping,
                                  src_docker_cli, dst_docker_cli)
         verify_replication(src_mapping, dst_mapping, src_docker_cli,
                            dst_docker_cli, excluded_files=excluded_files)
 
+
 if __name__ == '__main__':
     unittest.main()
-

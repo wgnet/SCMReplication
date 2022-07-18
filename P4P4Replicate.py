@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/python3
 
 '''p4 to p4 replication script
 '''
@@ -6,12 +6,11 @@ import os
 import sys
 import tempfile
 import traceback
-
-import P4
-from lib.buildlogger import getLogger, set_logging_color_format
+from lib.buildlogger import getLogger
 from lib.p4server import P4Server
 from lib.PerforceReplicate import P4Transfer
 from lib.scmrepargs import get_arguments
+from lib.buildcommon import remove_dir_contents
 
 logger = getLogger(__name__)
 
@@ -27,14 +26,13 @@ def create_p4_workspace(p4, ws_cfg, line_end='share', stream=None):
     with open(ws_cfg['mappingcfg'], 'rt') as f:
         ws_view_cfgstr = f.readlines()
         ws_view = [mapping.split() for mapping in ws_view_cfgstr]
-        ws_mapping = map(P4Server.WorkspaceMapping._make, ws_view)
+        ws_mapping = list(map(P4Server.WorkspaceMapping._make, ws_view))
 
     # create workspace
     unique_id = ws_cfg.get('uniqueid') if hasattr(ws_cfg, 'uniqueid') else None
     ws_name = p4.create_workspace(ws_mapping, ws_cfg['ws_root'],
                                   unique_id=unique_id, line_end=line_end,
                                   stream=stream)
-
     # take a look to see if client is created
     if all([ws_name != cli['client'] for cli in p4.run_clients()]):
         raise Exception('failed to create client %s' % ws_name)
@@ -59,7 +57,7 @@ def create_PerforceReplicate_cfg_file(srcCfg, tgtCfg):
     src_cfg_str = '\n'.join(['%s=%s' % (k, v)
                              for k, v in srcCfg.items()
                              if k in ws_cfg_item and v is not None])
-    tgt_cfg_str = '\n'.join(['%s=%s' %(k, v)
+    tgt_cfg_str = '\n'.join(['%s=%s' % (k, v)
                              for k, v in tgtCfg.items()
                              if k in ws_cfg_item and v is not None])
     src_content = '[source]\n' + src_cfg_str
@@ -69,7 +67,7 @@ def create_PerforceReplicate_cfg_file(srcCfg, tgtCfg):
     cfg_content = '\n'.join([src_content, tgt_content, gen_content])
 
     cfg_fd, cfg_path = tempfile.mkstemp(suffix='.cfg', text=True)
-    os.write(cfg_fd, cfg_content)
+    os.write(cfg_fd, str.encode(cfg_content))
     os.close(cfg_fd)
 
     return cfg_path
@@ -94,10 +92,16 @@ def replicate(args):
                'ws_root': args.workspace_root,
                'uniqueid': args.uniqueid,
                'mappingcfg': args.target_workspace_view_cfgfile,
-               'empty_file': args.target_empty_file,}
+               'empty_file': args.target_empty_file, }
 
-    src_p4 = P4Server(src_cfg['p4port'], src_cfg['p4user'], src_cfg['p4passwd'])
-    dst_p4 = P4Server(dst_cfg['p4port'], dst_cfg['p4user'], dst_cfg['p4passwd'])
+    src_p4 = P4Server(
+        src_cfg['p4port'],
+        src_cfg['p4user'],
+        src_cfg['p4passwd'])
+    dst_p4 = P4Server(
+        dst_cfg['p4port'],
+        dst_cfg['p4user'],
+        dst_cfg['p4passwd'])
 
     src_stream = None
     if hasattr(args, 'source_p4_stream'):
@@ -119,23 +123,27 @@ def replicate(args):
         if args.replicate_user_and_timestamp:
             sys.argv.append('--replicate-user-and-timestamp')
 
-        if (hasattr(args, 'prefix_description_with_replication_info') and
-            args.prefix_description_with_replication_info):
+        if (hasattr(args, 'prefix_description_with_replication_info') and args.prefix_description_with_replication_info):
             sys.argv.append('--prefix-description-with-replication-info')
 
         if hasattr(args, 'dry_run') and args.dry_run:
             sys.argv.append('--dry-run')
 
+        if hasattr(args, 'base') and args.base:
+            sys.argv.append('--base')
+
         sys.argv.extend(['--verbose', args.verbose])
 
         p4Rep = P4Transfer(*sys.argv[1:])
         ret = p4Rep.replicate()
-    except Exception, e:
+    except Exception as e:
         # print exception, or we wouldn't be able to see it if
         # another exception is raised in finally section
         logger.error(e)
         logger.error(traceback.format_exc())
         raise e
+    else:
+        remove_dir_contents(src_cfg['ws_root'])
     finally:
         os.unlink(p4RepCfgFile)
         delete_p4_workspace(src_p4)
@@ -147,5 +155,5 @@ def replicate(args):
 if __name__ == '__main__':
     args = get_arguments('P4', 'P4')
     logger.setLevel(args.verbose)
-
+    logger.info("Arguments are %s", args)
     replicate(args)

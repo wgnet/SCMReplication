@@ -1,25 +1,24 @@
-#!/usr/bin/env python
+#!/usr/bin/python3
 
 '''P4 to Svn replication script
 '''
 
 import os
 import sys
-import shutil
 import tempfile
 
-from lib.buildlogger import getLogger, set_logging_color_format
-from lib.buildcommon import (working_in_dir, remove_dir_contents)
+from lib.buildlogger import getLogger
+from lib.buildcommon import remove_dir_contents
 from lib.scmrepargs import get_arguments
 from lib.p4server import P4Server
-from lib.PerforceReplicate import P4Transfer
-from lib.SvnPython import SvnPython, SvnPythonException
+from lib.PerforceToSubversion import PerforceToSubversion
+#from lib.SvnPython import SvnPython, SvnPythonException
 from P4P4Replicate import (create_p4_workspace,
                            delete_p4_workspace,)
-from lib.PerforceToSubversion import PerforceToSubversion
+
 
 logger = getLogger(__name__)
-logger.setLevel('DEBUG')
+logger.setLevel('INFO')
 
 
 def create_P42Svn_cfg_file(src_cfg, dst_cfg):
@@ -34,12 +33,12 @@ def create_P42Svn_cfg_file(src_cfg, dst_cfg):
                     'svn_project_dir', 'svn_repo_url', 'svn_user',
                     'svn_passwd', 'rev_counter']
     p4_cfg_item = ['p4client', 'p4port', 'p4user', 'p4passwd', 'counter',
-                   'endchange',]
+                   'endchange', ]
 
     src_cfg_str = '\n'.join(['%s=%s' % (k, v)
                              for k, v in src_cfg.items()
                              if k in p4_cfg_item and v is not None])
-    tgt_cfg_str = '\n'.join(['%s=%s' %(k, v)
+    tgt_cfg_str = '\n'.join(['%s=%s' % (k, v)
                              for k, v in dst_cfg.items()
                              if k in svn_cfg_item and v is not None])
     src_content = '[source]\n' + src_cfg_str
@@ -49,7 +48,7 @@ def create_P42Svn_cfg_file(src_cfg, dst_cfg):
     cfg_content = '\n'.join([src_content, tgt_content, gen_content])
 
     cfg_fd, cfg_path = tempfile.mkstemp(suffix='.cfg', text=True)
-    os.write(cfg_fd, cfg_content)
+    os.write(cfg_fd, str.encode(cfg_content))
     os.close(cfg_fd)
 
     return cfg_path
@@ -75,10 +74,13 @@ def replicate(args):
                'ws_root': args.workspace_root,
                'mappingcfg': args.target_workspace_view_cfgfile,
                'svn_repo_label': args.target_port,
-               'svn_client_root': args.workspace_root,}
+               'svn_client_root': args.workspace_root, }
 
     # create target p4 workspace
-    src_p4 = P4Server(src_cfg['p4port'], src_cfg['p4user'], src_cfg['p4passwd'])
+    src_p4 = P4Server(
+        src_cfg['p4port'],
+        src_cfg['p4user'],
+        src_cfg['p4passwd'])
     create_p4_workspace(src_p4, src_cfg)
     src_cfg['p4client'] = src_p4.client
 
@@ -107,12 +109,12 @@ def replicate(args):
             sys.argv.extend(['--verbose', args.verbose])
 
         if (hasattr(args, 'prefix_description_with_replication_info')
-            and args.prefix_description_with_replication_info):
+                and args.prefix_description_with_replication_info):
             sys.argv.append('--prefix-description-with-replication-info')
 
         # let's go
         ret = PerforceToSubversion()
-    except Exception, e:
+    except Exception as e:
         logger.error(e)
         raise
     else:
@@ -123,9 +125,9 @@ def replicate(args):
 
     return ret
 
+
 if __name__ == '__main__':
     args = get_arguments('P4', 'SVN')
     logger.setLevel(args.verbose)
 
     replicate(args)
-

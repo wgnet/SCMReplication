@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/python3
 
 '''test replication of streams in perforce sampledepot.
 
@@ -40,7 +40,6 @@ class SampleDepotTestStream(ReplicationTestCaseWithDocker):
                               **kwargs)
         return dst_depot
 
-
     def test_replicate_sample_streams_gwt_streams(self):
         ''''//gwt-streams/...'
         '''
@@ -48,13 +47,11 @@ class SampleDepotTestStream(ReplicationTestCaseWithDocker):
                        '/gwt-streams/earl-dev',
                        '/gwt-streams/main',
                        '/gwt-streams/release1.5',
-                       '/gwt-streams/release2.0',]
+                       '/gwt-streams/release2.0', ]
 
         for depot_dir in stream_dirs:
-            self.replicate_sample_dir_withdocker(depot_dir,
-                                                 source_p4_stream='/'+depot_dir)
-
-
+            self.replicate_sample_dir_withdocker(
+                depot_dir, source_p4_stream='/' + depot_dir)
 
     def test_replicate_sample_streams_jam(self):
         ''' //jam/...
@@ -63,13 +60,12 @@ class SampleDepotTestStream(ReplicationTestCaseWithDocker):
                        '/jam/dev2.3',
                        '/jam/rel2.1',
                        '/jam/rel2.2',
-                       '/jam/rel2.3',]
+                       '/jam/rel2.3', ]
 
         for depot_dir in stream_dirs:
             stream = '/' + depot_dir
             self.replicate_sample_dir_withdocker(depot_dir,
                                                  source_p4_stream=stream)
-
 
     def test_replicate_sample_streams_pb(self):
         ''' //pb/...
@@ -91,7 +87,5 @@ class SampleDepotTestStream(ReplicationTestCaseWithDocker):
                                                  source_p4_stream=stream)
 
 
-
 if __name__ == '__main__':
     unittest.main()
-

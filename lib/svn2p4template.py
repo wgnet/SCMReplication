@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/python3
 
 '''svn to p4 replication config file related variables and functions
 
@@ -16,7 +16,8 @@ TARGET_SECTION = 'target'
 USED_BY_PID = 'USED_BY_PID'
 RUN_ID = 'RUN_ID'
 
-# This is for writing to sample config file - OrderedDict used to preserve order of lines.
+# This is for writing to sample config file - OrderedDict used to preserve
+# order of lines.
 DEFAULT_CONFIG = OrderedDict({
     DOCUMENT_SECTION: OrderedDict([
         ("# This file is a historical record of the migration process. Do not delete.", None),
@@ -60,25 +61,29 @@ DEFAULT_CONFIG = OrderedDict({
     ]),
 })
 
+
 def writeTemplateConfig():
-    from ConfigParser import ConfigParser
+    from configparser import ConfigParser
 
     # Do not over-write another file with the same name
     if os.path.exists(TEMPLATE):
         print("")
-        print("# The template configuration file, {}, already exists".format(TEMPLATE))
+        print(("# The template configuration file, {}, already exists".format(TEMPLATE)))
         print("")
         return
 
     # Print defaults from above dictionary for saving as a base file
     config = ConfigParser(allow_no_value=True)
     config.optionxform = str
-    ordered_secs =[SOURCE_SECTION,TARGET_SECTION,GENERAL_SECTION,DOCUMENT_SECTION]
+    ordered_secs = [
+        SOURCE_SECTION,
+        TARGET_SECTION,
+        GENERAL_SECTION,
+        DOCUMENT_SECTION]
     for sec in ordered_secs:
         config.add_section(sec)
-        for k in DEFAULT_CONFIG[sec].keys():
+        for k in list(DEFAULT_CONFIG[sec].keys()):
             config.set(sec, k, DEFAULT_CONFIG[sec][k])
-    print("\n# Creating a template for the required configuration file: %s\n" % TEMPLATE)
+    print(("\n# Creating a template for the required configuration file: %s\n" % TEMPLATE))
     with open(TEMPLATE, "wt") as fh:
         config.write(fh)
-

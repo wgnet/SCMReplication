@@ -1,10 +1,7 @@
-#!/usr/bin/env python
+#!/usr/bin/python3
 
 ''' test cases for obliterate
 '''
-
-import os
-import tempfile
 
 from testcommon import replicate_sample_dir, BUILD_TEST_P4D_USER
 from lib.p4server import P4Server
@@ -22,7 +19,6 @@ class SampleDepotTestObliterate(ReplicationTestCaseWithDocker):
         src_p4 = P4Server('%s:1666' % src_ip, p4_user)
         src_p4.run_obliterate('-y', file_rev)
 
-        
     def test_replicate_sample_depot_obliterate0(self):
         '''obliterate 1st revision of a file
         '''
@@ -56,7 +52,6 @@ class SampleDepotTestObliterate(ReplicationTestCaseWithDocker):
                              do_integration_verification=False)
 
         logger.passed(test_case)
-
 
     def test_replicate_sample_depot_obliterate2(self):
         '''obliterate a file revision which is created by "branch to"

@@ -1,26 +1,29 @@
-#!/usr/bin/env python
+#!/usr/bin/python3
 # -*- coding: utf-8 -*-
 
 '''Replication svn implementation
 
+https://confluence.wargaming.net/display/WA/3.1.2+WGRepo+-+SVN+Publishing+Tool
 '''
 
 import os
-import pickle
+import _pickle as pickle
+import re
 import sys
 import shlex
 import shutil
-from urlparse import urlparse, urljoin, urlunparse
+from urllib.parse import urlparse, urljoin, urlunparse
 from pprint import pprint, pformat
 
 import pysvn
 
-from buildlogger import getLogger
-from buildcommon import get_common_stem, print_data, generate_random_str, working_in_dir
-from SvnPython import SvnPython, SvnPythonException
-from scmrep import ReplicationSCM, ReplicationException
+from .buildlogger import getLogger
+from .buildcommon import get_common_stem, print_data, generate_random_str, working_in_dir
+from .SvnPython import SvnPython, SvnPythonException
+from .scmrep import ReplicationSCM, ReplicationException
 
 from P4 import Map as P4Map
+
 
 class RepSvnException(ReplicationException):
     pass
@@ -38,7 +41,7 @@ class ReplicationSvn(ReplicationSCM):
             ('SVN_USER', True),
             ('SVN_PASSWD', True),
             ('SVN_REPO_URL', True),
-            ('SVN_VIEW_MAPPING', True),]
+            ('SVN_VIEW_MAPPING', True), ]
 
         super(ReplicationSvn, self).__init__(section, cfg_parser)
 
@@ -66,7 +69,9 @@ class ReplicationSvn(ReplicationSCM):
         self.additional_dirs = []
 
         svn_root = self.SVN_CLIENT_ROOT
-        mapping_str = ['/%s/...  %s/...' % (self.replicate_view_mapping[0], svn_root)]
+        mapping_str = [
+            '/%s/...  %s/...' %
+            (self.replicate_view_mapping[0], svn_root)]
         for m in self.replicate_view_mapping[1:]:
             if m.endswith('/'):
                 m = m[:-1]
@@ -80,11 +85,11 @@ class ReplicationSvn(ReplicationSCM):
                 leave_dir = os.path.split(m)[1]
                 random_str = generate_random_str(10)
                 exc_dir = '%s/%s  %s/%s_dir_%s' % (m_sign, m_path, svn_root,
-                                                  random_str, leave_dir)
+                                                   random_str, leave_dir)
                 exc_files = '%s/%s/...  %s/%s_file_%s/...' % (m_sign, m_path,
-                                                             svn_root,
-                                                             random_str,
-                                                             leave_dir)
+                                                              svn_root,
+                                                              random_str,
+                                                              leave_dir)
                 mapping_str.extend([exc_dir, exc_files])
             else:
                 msg = '"%s" not supported in svn view mapping' % m
@@ -119,7 +124,7 @@ class ReplicationSvn(ReplicationSCM):
     def connect(self):
         '''Create svn instance
         '''
-        #self._verify_root_folder()
+        # self._verify_root_folder()
         self.svn = SvnPython(self.SVN_REPO_URL,
                              self.SVN_USER,
                              self.SVN_PASSWD,
@@ -145,7 +150,7 @@ class ReplicationSvn(ReplicationSCM):
             if last_changeset in svn_revs:
                 idx_of_last_changeset = svn_revs.index(last_changeset)
                 # +1 for inclusive
-                svn_revs = svn_revs[:idx_of_last_changeset+1]
+                svn_revs = svn_revs[:idx_of_last_changeset + 1]
             else:
                 err_msg = '%d not in svn revisions: %s' % (last_changeset,
                                                            svn_revs)
@@ -161,10 +166,10 @@ class ReplicationSvn(ReplicationSCM):
         project_dir = self.SVN_PROJECT_DIR
         repo_url = self.SVN_REPO_URL
         try:
-            rev_logs = self.svn.run_log(repo_url+project_dir,
+            rev_logs = self.svn.run_log(repo_url + project_dir,
                                         end_rev=rev,
                                         limit=num_of_rev)
-        except pysvn.ClientError, e:
+        except pysvn.ClientError as e:
             if 'File not found' in str(e):
                 return []
             raise
@@ -249,7 +254,7 @@ class ReplicationSvn(ReplicationSCM):
         repo_url = self.SVN_REPO_URL
         project_dir = self.SVN_PROJECT_DIR
         project_url = os.path.join(repo_url, project_dir[1:])
-        mod_dir_rel = mod_dir[len(self.get_root_folder())+1:]
+        mod_dir_rel = mod_dir[len(self.get_root_folder()) + 1:]
         parent_url = os.path.join(project_url, mod_dir_rel)
 
         for external_prop_line in external_prop.strip().split('\n'):
@@ -306,7 +311,7 @@ class ReplicationSvn(ReplicationSCM):
         return externals
 
     def checkout_externals(self, ext_url, peg_rev, rev, abs_todir, **kwargs):
-        '''checkout svn:externals, 
+        '''checkout svn:externals,
         '''
         result = False
         # checkout external
@@ -329,16 +334,22 @@ class ReplicationSvn(ReplicationSCM):
             out = self.svn.run_cmd_with_args(sub_cmd, cmd_args)
             self.logger.info('checked out %s, %s' % (url, out))
             result = True
-        except Exception, e:
+        except Exception as e:
             if 'is already a working copy for a different URL' in str(e):
-                self.logger.warning('%s failed, (%s), remove and retry' % (cmd_args, e))
+                self.logger.warning(
+                    '%s failed, (%s), remove and retry' %
+                    (cmd_args, e))
                 shutil.rmtree(abs_todir)
                 self.svn.run_cmd_with_args(sub_cmd, cmd_args)
             elif "doesn't exist" in str(e):
-                self.logger.error('Aborted, failed to checkout %s, %s' % (url, e))
+                self.logger.error(
+                    'Aborted, failed to checkout %s, %s' %
+                    (url, e))
             elif "E155004" in str(e) or "E155037" in str(e):
                 # locked
-                self.logger.warning('%s failed,(%s), cleanup and retry' % (cmd_args, e))
+                self.logger.warning(
+                    '%s failed,(%s), cleanup and retry' %
+                    (cmd_args, e))
                 self.svn.run_cleanup(abs_todir)
                 out = self.svn.run(sub_cmd, cmd_args)
                 self.logger.info('checked out %s, %s' % (url, out))
@@ -357,8 +368,8 @@ class ReplicationSvn(ReplicationSCM):
             prev_props = None
             try:
                 prev_props = self.svn.run_proplist(mod_dir_url, prev_rev, rev)
-            except Exception, e:
-                if not 'Unable to find repository location for' in str(e):
+            except Exception as e:
+                if 'Unable to find repository location for' not in str(e):
                     raise
 
             curr_props = self.svn.run_proplist(mod_dir_url, rev, rev)
@@ -400,7 +411,7 @@ class ReplicationSvn(ReplicationSCM):
                 # add to change log so that they could be
                 # added/removed
                 for _, _, _, prev_absdir in prev_externals:
-                    path_to_del = {'path':prev_absdir,'action':'D'}
+                    path_to_del = {'path': prev_absdir, 'action': 'D'}
                     path_to_del = pysvn.PysvnLogChangedPath(path_to_del)
                     changed_abspaths.append(path_to_del)
 
@@ -410,16 +421,14 @@ class ReplicationSvn(ReplicationSCM):
                             cp['action'] = 'R'
                             break
 
-                    path_to_add = {'path':curr_absdir,'action':'A',
-                                   'externals':True}
+                    path_to_add = {'path': curr_absdir, 'action': 'A',
+                                   'externals': True}
                     path_to_add = pysvn.PysvnLogChangedPath(path_to_add)
                     changed_abspaths.append(path_to_add)
 
                 externals_to_checkout |= curr_externals
 
-
         return externals_to_checkout
-
 
     def generate_cache_fileinfo_filename(self):
         cache_file = self.SVN_REPO_URL + self.SVN_PROJECT_DIR
@@ -434,15 +443,16 @@ class ReplicationSvn(ReplicationSCM):
 
         file_kind_dict = dict()
         if os.path.isfile(cache_file):
-            with open(cache_file, 'rt') as f:
+            with open(cache_file, 'rb') as f:
                 file_kind_dict = pickle.load(f)
 
         return file_kind_dict
 
     def update_cache_fileinfo(self, file_kind_dict):
         cache_file = self.generate_cache_fileinfo_filename()
-        with open(cache_file, 'wt') as f:
-            pickle.dump(file_kind_dict, f)
+        with open(cache_file, 'wb') as f:
+            f.write(pickle.dumps(file_kind_dict))
+#            pickle.dump(file_kind_dict.decode("utf-8"), f)
 
     def get_repofile_kind(self, files_to_mod, rev):
         #paths_to_check = [f for f in files_to_mod if f not in self.svn_path_kinds]
@@ -469,7 +479,7 @@ class ReplicationSvn(ReplicationSCM):
 
         urls_to_check = self.translate_abspath_to_repopath(list(dirs_to_check))
         for idx, url in enumerate(urls_to_check):
-            msg = 'Getting info of %s@%s(%d/%d)' % (url, rev, idx+1,
+            msg = 'Getting info of %s@%s(%d/%d)' % (url, rev, idx + 1,
                                                     len(urls_to_check))
             self.logger.info(msg)
             files_list_info = self.svn.run_list(url, rev, rev)
@@ -516,20 +526,40 @@ class ReplicationSvn(ReplicationSCM):
 
         return modified_files, externals
 
+    def update_changed_files_in_group(self, changed_files, rev, peg_revs=None,
+                                      update_arg=None):
+        if not changed_files:
+            return changed_files
+
+        num_of_files = len(changed_files)
+        gs = 200
+
+        updated_files = []
+        for idx in range(gs, num_of_files + gs, gs):
+            files_group = changed_files[idx - gs:idx]
+            updated = self.update_changed_files(files_group,
+                                                rev=rev,
+                                                peg_revs=peg_revs,
+                                                update_arg=update_arg)
+            updated_files.extend(updated)
+
+        return updated_files
+
     def update_changed_files(self, changed_files, rev, peg_revs=None,
                              update_arg=None):
         '''Update files in changed_path to @rev and sanity-check the update
         '''
         if not changed_files:
-            return True
+            return changed_files
 
         if not peg_revs:
             peg_revs = [rev] * len(changed_files)
 
+        self.logger.debug('changed files: %s' % pformat(changed_files))
         try:
             self.svn.run_update(changed_files, rev, peg_revs=peg_revs,
                                 update_arg=update_arg)
-        except SvnPythonException, e:
+        except SvnPythonException as e:
             '''https://svn.apache.org/repos/asf/subversion/branches/1.8.x/subversion/libsvn_client/update.c
 
             468   /* We handle externals after the update is complete, so that
@@ -543,12 +573,42 @@ class ReplicationSvn(ReplicationSCM):
             ignore this exception.
             '''
             if 'Error handling externals definition for' in str(e):
-                self.logger.error('updating svn external failed(%s), keep going' % e)
-                return True
+                self.logger.error(
+                    'updating svn external failed(%s), keep going' %
+                    e)
+                return changed_files
 
-            raise
+            # handle missing nodes
+            missing_node_pat = "The node '(?P<missing>.*)' was not found"
+            missing_node_result = re.search(missing_node_pat, str(e))
+            self.logger.error(
+                'missing node result: %s' %
+                pformat(missing_node_result))
+            if missing_node_result:
+                changed_files_existant = []
+                for cf in changed_files:
+                    file_info = None
+                    try:
+                        file_info = self.svn.run_info2(cf)
+                    except pysvn.ClientError as ce:
+                        pass
 
-        return True
+                    if file_info:
+                        changed_files_existant.append(cf)
+
+                self.logger.warning(
+                    'changed_files: %s' %
+                    pformat(changed_files))
+                self.logger.warning(
+                    'changed_files_exi: %s' %
+                    pformat(changed_files_existant))
+
+                return self.update_changed_files(changed_files_existant, rev,
+                                                 peg_revs, update_arg)
+
+            raise e
+
+        return changed_files
 
     def cleanup_externals(self):
         '''We have to cleanup externals after submitting a change, otherwise
@@ -579,10 +639,11 @@ class ReplicationSvn(ReplicationSCM):
         project_dir = self.SVN_PROJECT_DIR
 
         for walk_root, dirs, files in os.walk(wc_root):
-            #for name in dirs + files:
+            # for name in dirs + files:
             for name in files:
                 file_full_path = os.path.join(walk_root, name)
-                rel_repo_path = os.path.join(project_dir, file_full_path[len(wc_root)+1:])
+                rel_repo_path = os.path.join(
+                    project_dir, file_full_path[len(wc_root) + 1:])
 
                 if self.is_in_cur_project(rel_repo_path, project_dir):
                     continue
@@ -593,7 +654,7 @@ class ReplicationSvn(ReplicationSCM):
                     os.remove(file_full_path)
 
                 self.logger.error('%s' % file_full_path)
-                if not '.svn' in file_full_path:
+                if '.svn' not in file_full_path:
                     pass
                     #raise Exception('%s is removed' % file_full_path)
 
@@ -607,18 +668,19 @@ class ReplicationSvn(ReplicationSCM):
 
         to_update = to_add + to_del + to_rep
         if to_update:
-            self.update_changed_files(to_update, rev,
-                                      update_arg='--set-depth infinity')
+            self.update_changed_files_in_group(
+                to_update, rev, update_arg='--set-depth infinity')
 
         if to_mod:
-            self.update_changed_files(to_mod, rev)
+            self.update_changed_files_in_group(to_mod, rev)
 
         self.logger.info('externals to checkout: %s' % externals)
         project_dir = self.SVN_PROJECT_DIR
         wc_dir = self.get_root_folder()
         for ext in externals:
             ext_src_url, peg_rev, rev, abs_todir = ext
-            rel_repo_path = os.path.join(project_dir, abs_todir[len(wc_dir)+1:])
+            rel_repo_path = os.path.join(
+                project_dir, abs_todir[len(wc_dir) + 1:])
 
             '''exclude files from svn:externals
 
@@ -632,7 +694,7 @@ class ReplicationSvn(ReplicationSCM):
                 list_depth = pysvn.depth.infinity
                 files_list_info = self.svn.run_list(ext_src_url, rev,
                                                     peg_rev, depth=list_depth)
-            except pysvn.ClientError, e:
+            except pysvn.ClientError as e:
                 if 'non-existent' in str(e):
                     continue
                 raise
@@ -642,7 +704,7 @@ class ReplicationSvn(ReplicationSCM):
             ext_content_paths = sorted(ext_content_paths, key=len)
             ext_proj_dir = ext_content_paths.pop(0)
             if not all([content_path.startswith(ext_proj_dir)
-                    for content_path in ext_content_paths]):
+                        for content_path in ext_content_paths]):
                 msg = 'some path does not starts with %s' % ext_proj_dir
                 raise RepSvnException(msg)
 
@@ -650,8 +712,8 @@ class ReplicationSvn(ReplicationSCM):
             ext_content_paths = [fi[0]['repos_path'] for fi in files_list_info
                                  if pysvn.node_kind.file == fi[0]['kind']]
             ext_to_files = [os.path.join(rel_repo_path,
-                                        ext_content_path[len(ext_proj_dir)+1:])
-                           for ext_content_path in ext_content_paths]
+                                         ext_content_path[len(ext_proj_dir) + 1:])
+                            for ext_content_path in ext_content_paths]
 
             self.logger.debug('ext_to_files: %s' % ext_to_files)
             ext_cont_in_view = [self.is_in_cur_project(ext_dir, project_dir)
@@ -664,7 +726,7 @@ class ReplicationSvn(ReplicationSCM):
             else:
                 self.checkout_externals(ext_src_url, peg_rev, rev, abs_todir,
                                         depth='empty')
-                changed_files = [ext_file[len(rel_repo_path)+1:]
+                changed_files = [ext_file[len(rel_repo_path) + 1:]
                                  for ext_file in ext_to_files
                                  if self.is_in_cur_project(ext_file, project_dir)]
                 peg_revs = []
@@ -673,7 +735,8 @@ class ReplicationSvn(ReplicationSCM):
                 self.logger.debug('changed files: %s' % changed_files)
                 self.logger.debug('abs_todir: %s' % abs_todir)
                 with working_in_dir(abs_todir):
-                    self.svn.run_update(changed_files, revision=rev, peg_revs=peg_revs)
+                    self.svn.run_update(
+                        changed_files, revision=rev, peg_revs=peg_revs)
 
         self.remove_excluded_files()
 
@@ -740,8 +803,9 @@ class ReplicationSvn(ReplicationSCM):
         @param changed_paths list of dictionary of record of changed paths
         @return filtered list of paths
         '''
-        cp_in_cur_proj = lambda cp: self.is_in_cur_project(cp['path'], project_dir)
-        changed_paths_in_project = filter(cp_in_cur_proj, changed_paths)
+        def cp_in_cur_proj(cp): return self.is_in_cur_project(
+            cp['path'], project_dir)
+        changed_paths_in_project = list(filter(cp_in_cur_proj, changed_paths))
         return changed_paths_in_project
 
     def fix_R_action_without_add(self, changed_abspaths):
@@ -754,7 +818,8 @@ class ReplicationSvn(ReplicationSCM):
         with no accompanying "A" entry. In this case, we have to
         manually add one.
         '''
-        replace_entries = filter(lambda cp:cp['action']=='R', changed_abspaths)
+        replace_entries = [
+            cp for cp in changed_abspaths if cp['action'] == 'R']
         add_paths = (cp['path'] for cp in changed_abspaths
                      if cp['action'] == 'A')
 
@@ -784,8 +849,8 @@ class ReplicationSvn(ReplicationSCM):
 
         changed_paths = svn_rev_log['changed_paths']
         # exclude those not related to current project/directory
-        paths_in_project = self.exclude_paths_not_in_curr_project(changed_paths,
-                                                                  project_dir)
+        paths_in_project = self.exclude_paths_not_in_curr_project(
+            changed_paths, project_dir)
 
         # translate from repo path to abspath
         changed_abspaths = self.translate_repopath_to_abspath(paths_in_project)
@@ -846,7 +911,7 @@ class ReplicationSvn(ReplicationSCM):
         try:
             svn.checkout_working_copy(project_dir, self.counter,
                                       depth='empty')
-        except pysvn.ClientError, e:
+        except pysvn.ClientError as e:
             if 'File not found' not in str(e):
                 raise
 
@@ -857,7 +922,7 @@ class ReplicationSvn(ReplicationSCM):
 
             svn.checkout_working_copy('/', revision=-1, depth='empty')
 
-            project_dir_list = filter(None, project_dir.split('/'))
+            project_dir_list = [_f for _f in project_dir.split('/') if _f]
             project_fs_dir = os.path.join(svn_root, project_dir[1:])
             project_fs_dir_root = os.path.join(svn_root, project_dir_list[0])
             os.makedirs(project_fs_dir)

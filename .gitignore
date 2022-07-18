@@ -1,0 +1,5 @@
+*.pyc
+
+# Results from test/dockerfiles/docker-svn/get_svn_apache_bigtop_dump.sh
+test/dockerfiles/docker-svn/apache.asf.bigtop.log
+test/dockerfiles/docker-svn/svn.apache.org_repos_asf_bigtop.dump

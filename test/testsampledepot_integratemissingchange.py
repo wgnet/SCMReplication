@@ -1,15 +1,14 @@
-#!/usr/bin/env python
+#!/usr/bin/python3
 
 '''some misc test cases
 '''
 
 import os
-import shutil
 import tempfile
 import unittest
 
 from testcommon import (BUILD_TEST_P4D_USER,
-                        replicate_sample_dir, 
+                        replicate_sample_dir,
                         get_p4d_from_docker,
                         get_changelist_in_sample_depot)
 from lib.p4server import P4Server
@@ -25,7 +24,7 @@ class SampleDepotTestIntegrateMissingChange(ReplicationTestCaseWithDocker):
     def build_test_revision(self, docker_cli, depot_dir):
         src_depot = '/%s/...' % depot_dir
         src_view = ((src_depot, './...'),)
-        src_mapping = map(P4Server.WorkspaceMapping._make, src_view)
+        src_mapping = list(map(P4Server.WorkspaceMapping._make, src_view))
 
         p4_user = BUILD_TEST_P4D_USER
         src_ip = docker_cli.get_container_ip_addr()
@@ -42,7 +41,7 @@ class SampleDepotTestIntegrateMissingChange(ReplicationTestCaseWithDocker):
         src_p4.run_add(src_from_file_path)
         src_p4.run_submit('-d', '1')
         # add 2nd ... 10th revisions
-        contents = map(str, range(2, 10))
+        contents = list(map(str, list(range(2, 10))))
         for content in contents:
             src_p4.run_edit(src_from_file_path)
             with open(src_from_file_path, 'at') as f:
@@ -59,7 +58,6 @@ class SampleDepotTestIntegrateMissingChange(ReplicationTestCaseWithDocker):
             src_p4.run_submit('-d', '%s' % integ_src_rev)
         src_p4.delete_workspace()
 
-        
     def test_replicate_integ_with_no_missing_change(self):
         '''replication integrations with missing revisions, i.e. missing changes
         '''
@@ -108,7 +106,6 @@ class SampleDepotTestIntegrateMissingChange(ReplicationTestCaseWithDocker):
 
         logger.passed(test_case)
 
-
     def replicate_integ_with_nth_change_missing(self, n):
         src_docker_cli = self.docker_clients['missing_nth_src']
         dst_docker_cli = self.docker_clients['missing_nth_dst']
@@ -146,7 +143,8 @@ class SampleDepotTestIntegrateMissingChange(ReplicationTestCaseWithDocker):
 
         logger.passed(test_case)
 
-    def replicate_sampledepot_integ_with_first_n_changes_missing(self, depot_dir, n):
+    def replicate_sampledepot_integ_with_first_n_changes_missing(
+            self, depot_dir, n):
         src_docker_cli = self.docker_clients['first_n_src']
         dst_docker_cli = self.docker_clients['first_n_dst']
 
@@ -170,7 +168,8 @@ class SampleDepotTestIntegrateMissingChange(ReplicationTestCaseWithDocker):
         # for now, we test replication starting from changelist[3],
         # need to test more in the future.
         for n in range(0, 3):
-            self.replicate_sampledepot_integ_with_first_n_changes_missing(depot_dir, n)
+            self.replicate_sampledepot_integ_with_first_n_changes_missing(
+                depot_dir, n)
 
         logger.passed(test_case)
 
@@ -189,13 +188,13 @@ class SampleDepotTestIntegrateMissingChange(ReplicationTestCaseWithDocker):
             src_p4.run_add(src_from_file_path)
             src_p4.run_submit('-d', '1')
             # add 2nd ... 9th revisions
-            revs = map(str, range(2, 10))
+            revs = list(map(str, list(range(2, 10))))
             for rev in revs:
                 src_p4.run_edit(src_from_file_path)
                 with open(src_from_file_path, 'at') as f:
                     f.write(rev + '\n')
                 src_p4.run_submit('-d', rev)
-    
+
             # move last rev to new file
             src_to_file_path = os.path.join(src_p4.cwd, 'move_to')
             #move_src_rev = '%s' % (src_from_file_path, revs[-1])
@@ -218,7 +217,8 @@ class SampleDepotTestIntegrateMissingChange(ReplicationTestCaseWithDocker):
 
         # create source revision graph
         depot_dir = '/depot/src_move_graph'
-        from_file_path = self.build_test_revision_move(src_docker_cli, depot_dir)
+        from_file_path = self.build_test_revision_move(
+            src_docker_cli, depot_dir)
 
         # replicate all changelists but the last one
         src_depot = '/%s/...' % depot_dir
@@ -229,7 +229,7 @@ class SampleDepotTestIntegrateMissingChange(ReplicationTestCaseWithDocker):
                              src_docker_cli=src_docker_cli,
                              dst_docker_cli=dst_docker_cli,
                              obliterate=False,
-                             replicate_change_num=num_change-1)
+                             replicate_change_num=num_change - 1)
 
         # add one revision in target "move from" file
         dst_depot_dir = '/depot/buildtest%s' % depot_dir

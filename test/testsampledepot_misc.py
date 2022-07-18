@@ -1,18 +1,15 @@
-#!/usr/bin/env python
+#!/usr/bin/python3
 # -*- coding: utf-8 -*-
 
 '''some misc test cases
 '''
 
 import os
-import shutil
-import tempfile
-
+import unittest
 from testcommon import (BUILD_TEST_P4D_USER,
                         replicate_sample_view,
                         get_p4d_from_docker,
                         obliterate_all_depots)
-from lib.p4server import P4Server
 from lib.buildlogger import getLogger
 from lib.scmp4 import RepP4Exception
 from lib.scm2scm import ReplicationException
@@ -32,8 +29,8 @@ class SampleDepotTestMisc(ReplicationTestCaseWithDocker):
         src_depot = '/%s/...' % depot_dir
         dst_depot = '//depot/buildtest%s/...' % depot_dir
 
-        src_view = ((src_depot, './...'),)
-        dst_view = ((dst_depot, './...'),)
+        src_view = ((src_depot, './...'), )
+        dst_view = ((dst_depot, './...'), )
 
         src_docker = kwargs.pop('src_docker_cli', None)
         if not src_docker:
@@ -71,17 +68,19 @@ class SampleDepotTestMisc(ReplicationTestCaseWithDocker):
 
         logger.passed(test_case)
 
+    @unittest.skip('exceptions cannot be caught if the script runs in docker')
     def test_replicate_sample_depot_resume_from_manual_change(self):
         test_case = 'replicate_sample_depot_resume_from_manual_change'
 
         depot_dir = '/depot/Jam'
         src_docker_cli = self.docker_clients[0]
         dst_docker_cli = self.docker_clients[1]
-        dst_depot = self.replicate_sample_dir_withdocker(depot_dir,
-                                             src_docker_cli=src_docker_cli,
-                                             dst_docker_cli=dst_docker_cli,
-                                             replicate_change_num=10,
-                                             obliterate=False)
+        dst_depot = self.replicate_sample_dir_withdocker(
+            depot_dir,
+            src_docker_cli=src_docker_cli,
+            dst_docker_cli=dst_docker_cli,
+            replicate_change_num=10,
+            obliterate=False)
 
         dst_dir = dst_depot[1:-4]
         # manual commit to mess up replication script
@@ -101,24 +100,25 @@ class SampleDepotTestMisc(ReplicationTestCaseWithDocker):
                                                  src_docker_cli=src_docker_cli,
                                                  dst_docker_cli=dst_docker_cli,
                                                  replicate_change_num=10)
-        except ReplicationException, e:
-            if 'src counter is 0(default) while last replicated rev is 10' in str(e):
+        except ReplicationException as e:
+            if 'src counter is 0(default) while last replicated rev is 10' in str(
+                    e):
                 logger.info('Expected exception: %s' % str(e))
             else:
                 raise
-            
+
         try:
             self.replicate_sample_dir_withdocker(depot_dir,
                                                  src_docker_cli=src_docker_cli,
                                                  dst_docker_cli=dst_docker_cli,
                                                  src_counter=8,
                                                  replicate_change_num=10)
-        except ReplicationException, e:
+        except ReplicationException as e:
             if 'src counter(8) < last replicated rev(10)' in str(e):
                 logger.info('Expected exception: %s' % str(e))
             else:
                 raise
-            
+
         self.replicate_sample_dir_withdocker(depot_dir,
                                              src_docker_cli=src_docker_cli,
                                              dst_docker_cli=dst_docker_cli,
@@ -134,7 +134,6 @@ class SampleDepotTestMisc(ReplicationTestCaseWithDocker):
         test_case = 'replicate_sample_depot_specialsymbols'
 
         src_docker_cli = self.docker_clients[0]
-        dst_docker_cli = self.docker_clients[1]
 
         # create workspace
         depot_dir = '/depot/test_special_name_%s' % test_case
@@ -143,7 +142,8 @@ class SampleDepotTestMisc(ReplicationTestCaseWithDocker):
             clientspec = src_p4.fetch_client(src_p4.client)
             ws_root = clientspec._root
 
-            # add a file with special symbols in a directory with special symbols
+            # add a file with special symbols in a directory with special
+            # symbols
             special_dir_name = 'a_dir_with_%_*_#_@_in_its_name'
             special_depot_dir_name = 'a_dir_with_%25_%2A_%23_%40_in_its_name'
             test_dir = os.path.join(ws_root, special_dir_name)
@@ -152,11 +152,12 @@ class SampleDepotTestMisc(ReplicationTestCaseWithDocker):
             fn_depots = [('a_file_with_%_*_#_@_in_its_name.txt',
                           'a_file_with_%25_%2A_%23_%40_in_its_name.txt'),
                          ('another file with whitespaces.txt',
-                          'another file with whitespaces.txt'),]
+                          'another file with whitespaces.txt'), ]
             for special_file_name, special_depot_file_name in fn_depots:
                 test_depot_dir = os.path.join(ws_root, special_depot_dir_name)
                 special_file_path = os.path.join(test_dir, special_file_name)
-                special_depot_file_path = os.path.join(test_depot_dir, special_depot_file_name)
+                special_depot_file_path = os.path.join(
+                    test_depot_dir, special_depot_file_name)
                 description = 'test a file with file name %s' % special_file_name
                 with open(special_file_path, 'wt') as f:
                     f.write('My name is %s!\n' % special_file_name)
@@ -191,7 +192,6 @@ class SampleDepotTestMisc(ReplicationTestCaseWithDocker):
         depot_file = '//depot/Misc/Artwork/HQ.psd'
         copy_rev = 3
         src_docker_cli = self.docker_clients[0]
-        dst_docker_cli = self.docker_clients[1]
         with get_p4d_from_docker(src_docker_cli, depot_dir) as src_p4:
             src_p4.run_copy('%s#%d' % (depot_file, copy_rev), depot_file)
             src_p4.run_submit('-d', 'copy %s#%d %s' % (depot_file, copy_rev,
@@ -227,17 +227,14 @@ class SampleDepotTestMisc(ReplicationTestCaseWithDocker):
             with open(test_file, 'wt') as fo:
                 fo.write('My name is %s!\n' % test_file)
             p4.run_add('-f', test_file)
-            output_lines = p4.run_submit('-d', orig_desc)
+            p4.run_submit('-d', orig_desc)
 
-            for line in output_lines:
-                if 'submittedChange' in line:
-                    src_rev = line['submittedChange']
-
-        dst_depot = self.replicate_sample_dir_withdocker(src_dir,
-                                                         src_docker_cli=src_docker_cli,
-                                                         dst_docker_cli=dst_docker_cli,
-                                                         do_change_desc_verification=False,
-                                                         obliterate=False)
+        dst_depot = self.replicate_sample_dir_withdocker(
+            src_dir,
+            src_docker_cli=src_docker_cli,
+            dst_docker_cli=dst_docker_cli,
+            do_change_desc_verification=False,
+            obliterate=False)
 
         dst_dir = dst_depot[1:-4]
         with get_p4d_from_docker(dst_docker_cli, dst_dir) as p4:
@@ -250,8 +247,9 @@ class SampleDepotTestMisc(ReplicationTestCaseWithDocker):
 
         logger.passed(test_case)
 
+    @unittest.skip('exceptions cannot be caught if the script runs in docker')
     def test_replicate_sample_integration_ignored(self):
-        test_case = 'replicate_sample_integration_ignored'
+        # test_case = 'replicate_sample_integration_ignored'
 
         src_docker_cli = self.docker_clients['ignored-src']
         dst_docker_cli = self.docker_clients['ignored-dst']
@@ -301,11 +299,37 @@ class SampleDepotTestMisc(ReplicationTestCaseWithDocker):
             self.replicate_sample_dir_withdocker(src_dir,
                                                  src_docker_cli=src_docker_cli,
                                                  dst_docker_cli=dst_docker_cli)
-        except RepP4Exception, e:
+        except RepP4Exception as e:
             if '--target-empty-file' not in str(e):
                 raise
-        else:
+        except Exception as e:
             raise
+
+    def test_replicate_sample_rename_case(self):
+        '''replicate file rename
+        '''
+        test_case = 'replicate_sample_rename_case'
+
+        depot_dir = '/depot/Misc/Artwork'
+        src_docker_cli = self.docker_clients[0]
+        with get_p4d_from_docker(src_docker_cli, depot_dir) as src_p4:
+            file_path = os.path.join(src_p4.cwd, 'testfile.txt')
+            with open(file_path, 'wt') as fo:
+                fo.write('My name is %s!\n' % file_path)
+
+            src_p4.run_sync('...')
+            src_p4.run_add('-f', file_path)
+            src_p4.run_submit('-d', 'add new file')
+
+            src_p4.run_edit(file_path)
+            src_p4.run_move(file_path, os.path.join(src_p4.cwd, 'testfile.txt'))
+            src_p4.run_submit('-d', 'Rename')
+
+        # replicate
+        self.replicate_sample_dir_withdocker(depot_dir,
+                                             src_docker_cli=src_docker_cli)
+
+        logger.passed(test_case)
 
     def test_replicate_sample_depot_copy_deleted_rev(self):
         '''verify that branch generated by "p4 populate -f" could be replicated.
@@ -313,7 +337,6 @@ class SampleDepotTestMisc(ReplicationTestCaseWithDocker):
         test_case = 'replicate_sample_depot_copy_deleted_rev'
 
         src_docker_cli = self.docker_clients[0]
-        #dst_docker_cli = self.docker_clients[1]
 
         # run populate -f
         src_dir = '//depot/Jam/...'
@@ -346,7 +369,6 @@ class SampleDepotTestMisc(ReplicationTestCaseWithDocker):
         test_case = 'replicate_sample_depot_changing_exec_binary'
 
         depot_dir = '/depot/Misc/Artwork'
-        depot_file = '//depot/Misc/Artwork/HQ.psd'
         src_docker_cli = self.docker_clients[0]
         with get_p4d_from_docker(src_docker_cli, depot_dir) as src_p4:
             clientspec = src_p4.fetch_client(src_p4.client)
@@ -371,7 +393,6 @@ class SampleDepotTestMisc(ReplicationTestCaseWithDocker):
         test_case = 'replicate_sample_depot_changing_symlink'
 
         depot_dir = '/depot/Misc/Artwork'
-        depot_file = '//depot/Misc/Artwork/HQ.psd'
         src_docker_cli = self.docker_clients[0]
         with get_p4d_from_docker(src_docker_cli, depot_dir) as src_p4:
             clientspec = src_p4.fetch_client(src_p4.client)
@@ -404,7 +425,6 @@ class SampleDepotTestMisc(ReplicationTestCaseWithDocker):
                                              src_docker_cli=src_docker_cli)
 
         logger.passed(test_case)
-
 
     def test_replicate_sample_depot_ignored_files(self):
         '''verify replication of .so, .a and others that could be ignored by
@@ -459,9 +479,11 @@ class SampleDepotTestMisc(ReplicationTestCaseWithDocker):
     def test_replicate_sample_depot_special_strings(self):
         test_case = 'replicate_sample_depot_special_strings'
 
-        special_strings = {'utf-8':u"мыслю, следовательно существую., it's a smilling face, \u263A",
-                           'cp1251':u"мыслю, следовательно существую., it's a smilling face'",
-                           'latin1':u'La Santé',}
+        special_strings = {
+            'utf-8': "мыслю, следовательно существую., it's a smilling face, \u263A",
+            'cp1251': "мыслю, следовательно существую., it's a smilling face'",
+            'latin1': 'La Santé',
+        }
         depot_dir = '/depot/Misc'
         src_docker_cli = self.docker_clients[0]
         with get_p4d_from_docker(src_docker_cli, depot_dir) as src_p4:
@@ -469,16 +491,16 @@ class SampleDepotTestMisc(ReplicationTestCaseWithDocker):
             ws_root = clientspec._root
 
             src_p4.run_sync('...')
-            logger.info('src_p4.charset: %s' % src_p4.charset)
+            logger.info('src_p4.charset: %s', src_p4.charset)
 
             test_dir = os.path.join(ws_root, test_case)
             os.mkdir(test_dir)
-            
+
             import locale
             _, locale_encoding = locale.getlocale()
             special_string = special_strings.get(locale_encoding.lower())
             special_string = special_string.encode(locale_encoding)
-            fn = os.path.join(test_dir, special_string + '.txt')
+            fn = os.path.join(test_dir, special_string.decode("utf-8") + '.txt')
             with open(fn, 'wt') as f:
                 f.write('added %s' % fn)
             src_p4.run_add(fn)
@@ -494,6 +516,106 @@ class SampleDepotTestMisc(ReplicationTestCaseWithDocker):
         depot_dir = os.path.join(depot_dir, test_case)
         self.replicate_sample_dir_withdocker(depot_dir,
                                              src_docker_cli=src_docker_cli)
+
+        logger.passed(test_case)
+
+    def test_replicate_sample_depot_undo(self):
+        '''verify replication of "p4 undo"
+        '''
+        test_case = 'replicate_sample_depot_undo'
+
+        depot_dir = '/depot/Misc/Artwork'
+        depot_file = '//depot/Misc/Artwork/HQ.psd'
+        src_docker_cli = self.docker_clients['undo_test']
+        with get_p4d_from_docker(src_docker_cli, depot_dir) as src_p4:
+            src_p4.run_sync('...')
+
+            src_p4.run_undo(depot_file + '#3,5')
+            src_p4.run_submit('-d', 'undo file %s#3,5' % depot_file)
+
+        # replicate
+        self.replicate_sample_dir_withdocker(depot_dir,
+                                             src_docker_cli=src_docker_cli)
+
+        logger.passed(test_case)
+
+    def test_replicate_undo_integrate(self):
+        '''verify replication when undo merge replication
+        '''
+        test_case = 'test_replicate_undo_merge'
+        src_docker_cli = self.docker_clients['undo_integrate_src']
+        dst_docker_cli = self.docker_clients['undo_integrate_dst']
+
+        depot_dor = '/depot/Misc'
+
+        src_branch_dir = '//depot/Misc/Artwork'
+        src_dir = '//depot/Misc/Artwork2'
+        with get_p4d_from_docker(src_docker_cli, depot_dor) as depot_p4:
+            depot_p4.run_sync('...')
+
+            depot_p4.run_copy(src_branch_dir + '/...', src_dir + '/...')
+            depot_p4.run_submit('-d', 'Branch')
+
+            depot_p4.run_delete(src_branch_dir + '/HQ.psd')
+            depot_p4.run_submit('-d', 'Delete file')
+
+            depot_p4.run_integrate(
+                '-f',
+                '-Rb',
+                '-Rd',
+                src_branch_dir + '/...',
+                src_dir + '/...')
+            depot_p4.run_resolve('-at')
+            depot_p4.run_submit('-d', 'Merge delete file')
+            depot_p4.run_undo(src_dir + '/HQ.psd#2')
+            depot_p4.run_undo(src_dir + '/elvenchain_export.mb')
+            depot_p4.run_submit('-d', 'undo')
+
+        self.replicate_sample_dir_withdocker('/depot/Misc/Artwork2',
+                                             src_docker_cli=src_docker_cli,
+                                             dst_docker_cli=dst_docker_cli)
+
+        logger.passed(test_case)
+
+    def test_replicate_purge(self):
+        '''verify replication of purge
+        '''
+        test_case = 'replicate_purge'
+
+        depot_dir = '/depot/Jamgraph/MAIN/src'
+        src_docker_cli = self.docker_clients['purge_src']
+        dst_docker_cli = self.docker_clients['purge_dst']
+        with get_p4d_from_docker(src_docker_cli, depot_dir) as src_p4:
+            clientspec = src_p4.fetch_client(src_p4.client)
+            ws_root = clientspec._root
+
+            file_path = os.path.join(ws_root, 'gparticle.cpp')
+            src_p4.run_sync('...')
+
+            src_p4.run_edit('-t', 'text+S', file_path)
+            with open(file_path, 'wt') as f:
+                f.write('text file')
+            src_p4.run_submit('-d', 'edit and purge text file %s' % file_path)
+
+            src_p4.run_edit(file_path)
+            with open(file_path, 'wt') as f:
+                f.write('test')
+            src_p4.run_submit('-d', 'edit text file %s' % file_path)
+
+            src_p4.run_edit('-t', 'text+S', file_path)
+            src_p4.run_submit('-d', 'change purge')
+
+            src_p4.run_edit(file_path)
+            with open(file_path, 'wt') as f:
+                f.write('test5555')
+            src_p4.run_submit('-d', 'edit text file %s' % file_path)
+
+        # replicate
+        self.replicate_sample_dir_withdocker(depot_dir,
+                                             src_docker_cli=src_docker_cli,
+                                             dst_docker_cli=dst_docker_cli,
+                                             do_change_desc_verification=False,
+                                             do_integration_verification=False)
 
         logger.passed(test_case)
 

@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/python3
 
 '''test replication of perforce sampledepot in group.
 '''
@@ -35,11 +35,12 @@ class SampleDepotTestGroup(ReplicationTestCaseWithDocker):
 
         logger.passed(test_case)
 
-    def test_replicate_group_sample_depot_Jamgraph_changing_repinfo_location(self):
+    def test_replicate_group_sample_depot_Jamgraph_changing_repinfo_location(
+            self):
         test_case = 'replicate_sample_depot_Jamgraph_ingroup'
         depot_dir = '/depot/Jamgraph'
-        self.replicate_sampledir_in_groups_with_docker(depot_dir, 1,
-                                                       changing_repinfo_location=True)
+        self.replicate_sampledir_in_groups_with_docker(
+            depot_dir, 1, changing_repinfo_location=True)
 
         logger.passed(test_case)
 

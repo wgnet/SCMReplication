@@ -1,21 +1,22 @@
-#!/usr/bin/env python
+#!/usr/bin/python3
 
 '''test replication of depots in perforce sampledepot.
 '''
 import os
-
+import tempfile
 import unittest
+
 from replicationunittest import ReplicationTestCaseWithDocker
 from testcommon import get_p4d_from_docker
 from testcommon_p4svn import replicate_P4SvnReplicate, verify_replication
 from lib.buildlogger import getLogger
 from lib.buildcommon import generate_random_str
 
-import tempfile
 import testsampledepot
 import testsampledepot_misc
 
 logger = getLogger(__name__)
+
 
 class P4SvnReplicationTest(ReplicationTestCaseWithDocker):
     def replicate_sample_dir_withdocker(self, depot_dir, **kwargs):
@@ -24,9 +25,12 @@ class P4SvnReplicationTest(ReplicationTestCaseWithDocker):
         @param depot_dir, e.g. /depot/Jam
         '''
         src_depot = '/%s/...' % depot_dir
-        svn_test_dir_name = ('buildtest' +
-                             '_'.join(depot_dir.split('/')) +
-                             '_' + generate_random_str())
+        svn_test_dir_name = kwargs.pop('target_repo', None)
+        if not svn_test_dir_name:
+            svn_test_dir_name = ('buildtest' +
+                                 '_'.join(depot_dir.split('/')) +
+                                 '_' + generate_random_str())
+
         dst_depot = '/%s' % svn_test_dir_name
 
         src_docker_cli = kwargs.pop('src_docker_cli', None)
@@ -36,7 +40,6 @@ class P4SvnReplicationTest(ReplicationTestCaseWithDocker):
         dst_docker_cli = kwargs.pop('dst_docker_cli', None)
         if not dst_docker_cli:
             dst_docker_cli = self.docker_svn_clients['svn_0']
-
         src_view = ((src_depot, './...'),)
         dst_view = ((dst_depot, ''),)
 
@@ -71,7 +74,8 @@ class P4SvnSampleDepotTest(P4SvnReplicationTest,
         max_replicate = 20
 
         src_depot = '/%s/...' % depot_dir
-        svn_test_dir_name = 'buildtest%s_group' % '_'.join(depot_dir.split('/'))
+        svn_test_dir_name = 'buildtest%s_group' % '_'.join(
+            depot_dir.split('/'))
         dst_depot = '/%s' % svn_test_dir_name
 
         src_view = ((src_depot, './...'),)
@@ -104,16 +108,17 @@ class P4SvnSampleDepotTest(P4SvnReplicationTest,
         with get_p4d_from_docker(src_docker_cli, depot_dir) as p4:
             clientspec = p4.fetch_client(p4.client)
             ws_root = clientspec._root
-            # add a file with special symbols in a directory with special symbols
-            special_dir_name =  'a_dir_with_%_*_#_@_in_its_name'
+            # add a file with special symbols in a directory with special
+            # symbols
+            special_dir_name = 'a_dir_with_%_*_#_@_in_its_name'
             test_dir = tempfile.mkdtemp(prefix=special_dir_name, dir=ws_root)
             special_file_names = ['a_file_with_%_*_#_@_in_its_name.txt',
                                   'another file with whitespaces.txt']
             for fn in special_file_names:
                 special_file_path = os.path.join(test_dir, fn)
-                description = 'test a file with file name %s' % fn
+                description = f'test a file with file name {fn}'
                 with open(special_file_path, 'wt') as f:
-                    f.write('My name is %s!\n' % fn)
+                    f.write(f'My name is {fn}!\n')
                 p4.run_add('-f', special_file_path)
                 p4.run_submit('-d', description)
 
@@ -122,11 +127,13 @@ class P4SvnSampleDepotTest(P4SvnReplicationTest,
 
     @unittest.skip('only available for p4p4 rep')
     def test_replicate_sample_depot_copy_deleted_rev(self):
-        logger.warning('%s skipped' % test_case)
+        test_case = "test_replicate_sample_depot_copy_deleted_rev"
+        logger.warning('%s skipped', test_case)
 
     @unittest.skip('only available for p4p4 rep')
     def test_replicate_sample_commit_message_reformat_review(self):
-        logger.warning('%s skipped' % test_case)
+        test_case = "test_replicate_sample_commit_message_reformat_review"
+        logger.warning('%s skipped', test_case)
 
     @unittest.skip('only available for p4p4 rep')
     def test_replicate_sample_integration_ignored(self):
@@ -135,6 +142,15 @@ class P4SvnSampleDepotTest(P4SvnReplicationTest,
     @unittest.skip('only available for p4p4 rep')
     def test_replicate_sample_depot_resume_from_manual_change(self):
         pass
+
+    @unittest.skip('only available for p4p4 rep')
+    def test_replicate_undo_integrate(self):
+        pass
+
+    @unittest.skip('only available for p4p4 rep')
+    def test_replicate_purge(self):
+        pass
+
 
 if __name__ == '__main__':
     import unittest

@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/python3
 # -*- coding: utf-8 -*-
 
 import os
@@ -6,23 +6,31 @@ import re
 import shlex
 import shutil
 import stat
-import traceback
 import uuid
 
-from datetime import datetime, tzinfo, timedelta
+from datetime import datetime
 from pprint import pprint, pformat
 
-from buildlogger import getLogger
+from .buildlogger import getLogger
 from P4 import P4, P4Exception, Resolver, Map
-from p4server import P4Server
-from scmrep import ReplicationSCM, ReplicationException
+from .p4server import P4Server
+from .scmrep import ReplicationSCM, ReplicationException
+
+
+def check_if_known_issue(error_msg):
+    KNOWN_ISSUES = ['Out of date files must be resolved or reverted', 'Merges still pending -- use', 'Unexpected revs:']
+    for msg in KNOWN_ISSUES:
+        if msg in str(error_msg):
+            return True
+    return False
 
 
 class RepP4Exception(ReplicationException):
     pass
 
+
 class ChangeRevision:
-    def __init__( self, r, a, t, d, l):
+    def __init__(self, r, a, t, d, l):
         self.rev = r
         self.action = a
         self.type = t
@@ -66,12 +74,12 @@ class ChangeRevision:
                          'action = {} '.format(self.action),
                          'type = {} '.format(self.type),
                          'depotFile = {} '.format(self.depotFile),
-                         'localFile = {} '.format(self.localFile),])
+                         'localFile = {} '.format(self.localFile), ])
 
 
 class ReplicationP4(ReplicationSCM):
 
-    def __init__(self, section, cfg_parser, cli_arguments, verbose='DEBUG'):
+    def __init__(self, section, cfg_parser, cli_arguments, verbose='INFO'):
         self.option_properties = [
             ('P4CLIENT', False),
             ('P4MASKCLIENT', True),
@@ -80,7 +88,7 @@ class ReplicationP4(ReplicationSCM):
             ('P4PORT', False),
             ('COUNTER', True),
             ('ENDCHANGE', True),
-            ('P4PASSWD', True),]
+            ('P4PASSWD', True), ]
         super(ReplicationP4, self).__init__(section, cfg_parser)
 
         # only used by target p4config instance
@@ -121,7 +129,7 @@ class ReplicationP4(ReplicationSCM):
             maskclientspec = self.p4.fetch_client(self.P4MASKCLIENT)
             maskclientmap = Map(maskclientspec._view)
             ctr = Map('//%s/...  %s/...' % (maskclientspec._client,
-                                              maskclientspec._root))
+                                            maskclientspec._root))
             masklocalmap = Map.join(maskclientmap, ctr)
             self.maskdepotmap = masklocalmap.reverse()
 
@@ -142,7 +150,7 @@ class ReplicationP4(ReplicationSCM):
         """
         end_change = int(self.ENDCHANGE) if self.ENDCHANGE else None
         range_start = '@%d' % self.counter
-        range_end =  ('@%d' % end_change) if end_change else '#head'
+        range_end = ('@%d' % end_change) if end_change else '#head'
         rev_range = '...%s,%s' % (range_start, range_end)
         changes = self.p4.run_changes('-l', rev_range)
 
@@ -154,6 +162,13 @@ class ReplicationP4(ReplicationSCM):
             changes = changes[:self.cli_arguments.maximum]
 
         return changes
+
+    def get_base_change_to_replicate(self):
+        """Get the counter changelist to replicate
+        """
+        rev_range = '...@%d,@%d' % (self.counter, self.counter)
+        changes = self.p4.run_changes('-l', rev_range)
+        return changes[0]
 
     def is_p4_directory(self, path):
         p4 = self.p4
@@ -183,7 +198,7 @@ class ReplicationP4(ReplicationSCM):
         return descs
 
     def resetWorkspace(self):
-        self.p4.run_sync('-f','...#none')
+        self.p4.run_sync('-f', '...#none')
 
     def revertChanges(self):
         self.p4.run_revert('...')
@@ -212,7 +227,7 @@ class ReplicationP4(ReplicationSCM):
 
         @param changelist string of changelist
         '''
-        self.p4.run_sync('-f', '...@%s,%s' % (changelist, changelist))
+        return self.p4.run_sync('-f', '...@%s,%s' % (changelist, changelist))
 
     def get_filelogs(self, depot_files):
         '''get filelog of depot_files
@@ -221,7 +236,7 @@ class ReplicationP4(ReplicationSCM):
         @return dictionary of {depot_file:filelog}
         '''
         # remove None and '' from list
-        depot_files = filter(lambda fn: fn, depot_files)
+        depot_files = [fn for fn in depot_files if fn]
         # remove duplicate
         depot_files = list(set(depot_files))
 
@@ -231,23 +246,24 @@ class ReplicationP4(ReplicationSCM):
         if len(depot_files) > num_files_per_run:
             # append Nones so that we don't lose any file when using zip()
             depot_files_extended = depot_files[:]
-            depot_files_extended.extend([None]*(num_files_per_run-1))
+            depot_files_extended.extend([None] * (num_files_per_run - 1))
             depot_files_iter = iter(depot_files_extended)
             # divide list in to list of lists of 100 files
-            depot_files_groups = zip(*([depot_files_iter]*num_files_per_run))
+            depot_files_groups = list(
+                zip(*([depot_files_iter] * num_files_per_run)))
         else:
             depot_files_groups = [depot_files, ]
 
         tdf_file_logs = {}
         for tdfs in depot_files_groups:
-            tdfs = filter(None, tdfs)
+            tdfs = [_f for _f in tdfs if _f]
             if not tdfs:
                 continue
 
             file_logs = self.p4.run_filelog('-m1', tdfs)
 
             if len(tdfs) == len(file_logs):
-                tdf_file_logs.update(dict(zip(tdfs, file_logs)))
+                tdf_file_logs.update(dict(list(zip(tdfs, file_logs))))
             else:
                 depotFile_in_warning = [fl_w[:-len(' - no such file(s).')]
                                         for fl_w in self.p4.warnings]
@@ -260,12 +276,11 @@ class ReplicationP4(ReplicationSCM):
                     else:
                         tdfs_exist.append(dfs_depotFile)
 
-                tdf_file_logs.update(dict(zip(tdfs_exist, file_logs)))
+                tdf_file_logs.update(dict(list(zip(tdfs_exist, file_logs))))
 
         if len(tdf_file_logs) != len(depot_files):
             raise RepP4Exception('len(filelogs) != len(depotfiles)')
         return tdf_file_logs
-
 
     def get_integrations_to_replicate(self, depotFile, rev, filelog):
         '''get integrations of revision of depotFile
@@ -279,10 +294,10 @@ class ReplicationP4(ReplicationSCM):
 
         integ_to_actions = ('copy into', 'branch into', 'edit into',
                             'add into', 'delete into', 'merge into',
-                            'moved into', 'ignored by')
+                            'moved into', 'ignored by', 'undone by')
         integ_from_actions = ('copy from', 'branch from', 'edit from',
                               'delete from', 'add from', 'merge from',
-                              'moved from', 'ignored')
+                              'moved from', 'ignored', 'undid')
 
         # use reversed() here because the order of integration records
         # from run_filelog() is opposite to what we get from command
@@ -312,28 +327,57 @@ class ReplicationP4(ReplicationSCM):
 
         return integs
 
-    def get_change(self, changelist):
+    def get_change(self, changelist, sync_result=None):
         '''get description of changed files in a changelist
 
         @param changelist changelist number as a string
         @return list of change_revisions
         '''
         change_desc = self.p4.run_describe(changelist)[-1]
-
         local_files = [self.localmap.translate(df)
                        for df in change_desc['depotFile']]
+        # If source server is case sensitive, ignore hack
+        if self.p4.server_case_insensitive:
+            if sync_result:
+                # Hack, data in run_describe is incorrect, get the correct one from
+                # the sync command
+                # run this function only if source is case insensetive.
+                new_local_files = []
+                for s_file in sync_result:
+                    new_local_files.append(s_file['clientFile'])
 
-        changed_file_rec = zip(local_files, change_desc['depotFile'],
-                               change_desc['action'],
-                               change_desc['rev'],
-                               change_desc['type'])
+                # Make sure the order stays the same
+                df_lower_list = [df.lower() for df in new_local_files]
+                for fp in local_files:
+                    if fp and (fp.lower() in df_lower_list):
+                        local_files[local_files.index(fp)] = new_local_files[df_lower_list.index(fp.lower())]
+
+                change_desc['depotFile'] = []
+
+            for df in local_files:
+                if df:
+                    change_desc['depotFile'].append(
+                        self.depotmap.translate(df))
+                else:
+                    change_desc['depotFile'].append(df)
+
+        changed_file_rec = list(zip(local_files, change_desc['depotFile'],
+                                    change_desc['action'],
+                                    change_desc['rev'],
+                                    change_desc['type']))
         # if local_file is None, this file is not in current branch,
         # should not care about it.
-        changed_file_rec_in_branch = filter(lambda cfr: cfr[0],
-                                            changed_file_rec)
+        changed_file_rec_in_branch = [
+            cfr for cfr in changed_file_rec if cfr[0]]
 
-        depot_file_revs = ['%s#%s' % (depot_file, rev)
-                           for _, depot_file, _, rev, _ in changed_file_rec_in_branch]
+        depot_file_revs = [
+            '%s#%s' %
+            (depot_file,
+             rev) for _,
+            depot_file,
+            _,
+            rev,
+            _ in changed_file_rec_in_branch]
         changed_filelogs = self.get_filelogs(depot_file_revs)
 
         change_files = []
@@ -341,8 +385,8 @@ class ReplicationP4(ReplicationSCM):
             chRev = ChangeRevision(rev, action, ftype, depotFile, localFile)
 
             supported_actions = ('add', 'branch', 'integrate', 'edit',
-                                 'delete', 'move/delete', 'move/add')
-            if not action in supported_actions:
+                                 'delete', 'move/delete', 'move/add', 'purge')
+            if action not in supported_actions:
                 raise RepP4Exception('Unsupported change action, %s' % action)
 
             filelog = changed_filelogs['%s#%s' % (depotFile, rev)]
@@ -394,7 +438,7 @@ class ReplicationP4(ReplicationSCM):
         if not self.maskdepotmap:
             return True
 
-        return self.maskdepotmap.translate(localFile) != None
+        return self.maskdepotmap.translate(localFile) is not None
 
     def file_in_workspace(self, local_file):
         in_mask_depot = self.inMaskDepot(local_file)
@@ -413,7 +457,7 @@ class ReplicationP4(ReplicationSCM):
                 continue
 
             msg = "Skipping %s which is not in target workspace" % local_file
-            #self.logger.warning(msg)
+            self.logger.warning(msg)
             continue
 
         return files_in_ws
@@ -465,10 +509,25 @@ class ReplicationP4(ReplicationSCM):
             if filelog:
                 revision = filelog.revisions[0].rev
 
-            if revision + 1 != int(f.rev):
+            if revision + 1 > int(f.rev):
+                msg = 'File in source depot {}#{} should be 1 revision ahead ' \
+                      'of in target depot {}#{}. Error, target file should never be a revision ahead of source. revert'
+                msg = msg.format(
+                    f.depotFile,
+                    f.rev,
+                    f.targetDepotFile,
+                    revision)
+                self.p4.run_revert('...')
+                raise RepP4Exception(msg)
+
+            elif revision + 1 != int(f.rev):
                 msg = 'File in source depot {}#{} should be 1 revision ahead ' \
                       'of in target depot {}#{}. Error ignored and progressing.'
-                msg = msg.format(f.depotFile, f.rev, f.targetDepotFile, revision)
+                msg = msg.format(
+                    f.depotFile,
+                    f.rev,
+                    f.targetDepotFile,
+                    revision)
                 self.logger.warning(msg)
 
             for integ in f.integrations:
@@ -490,6 +549,32 @@ class ReplicationP4(ReplicationSCM):
                     msg = msg.format(integ.file, integ.erev,
                                      integ.targetDepotFile, target_revision)
                     self.logger.warning(msg)
+
+    def replicate_change_action_purge(self, file_change_rev, sourcePort):
+        localFile = file_change_rev.localFile
+
+        self.p4.run_sync('-k', localFile)
+
+        try:
+            localfile_fstat = self.p4.run_fstat('-Or', '-m1', localFile)
+        except RepP4Exception:
+            localfile_fstat = []
+
+        if localfile_fstat:
+            if not os.path.exists(localFile):
+                self.p4.run_sync('-f', localFile)
+
+            self.logger.warning("this file is supposed to exist, %s", os.path.exists(localFile))
+            self.p4.run_edit('-t', file_change_rev.type, localFile)
+        else:
+            msg = ('%s does not exist in target depot, '
+                   'ignoring it.' %
+                   file_change_rev.fixedLocalFile)
+            self.logger.warning(msg)
+            # self.p4.run_add('-ft', file_change_rev.type,
+            #                 file_change_rev.fixedLocalFile)
+
+        self.checkWarnings(file_change_rev.action)
 
     def replicate_change_action_edit(self, file_change_rev, sourcePort):
         localFile = file_change_rev.localFile
@@ -519,20 +604,44 @@ class ReplicationP4(ReplicationSCM):
 
             try:
                 localfile_fstat = self.p4.run_fstat('-Or', '-m1', localFile)
-            except:
+            except RepP4Exception:
                 localfile_fstat = []
 
             if localfile_fstat:
                 self.p4.run_edit('-t', file_change_rev.type, localFile)
             else:
                 msg = ('%s does not exist in target depot, '
-                      'adding instead of editing it.' %
+                       'adding instead of editing it.' %
                        file_change_rev.fixedLocalFile)
                 self.logger.warning(msg)
                 self.p4.run_add('-ft', file_change_rev.type,
                                 file_change_rev.fixedLocalFile)
 
             self.checkWarnings(file_change_rev.action)
+
+    def force_replicate_ignore_action(self, file_change_rev, sourcePort):
+        localFile = file_change_rev.localFile
+        self.p4.run_sync('-k', localFile)
+
+        try:
+            localfile_fstat = self.p4.run_fstat('-Or', '-m1', localFile)
+        except RepP4Exception:
+            localfile_fstat = []
+
+        if localfile_fstat:
+            if not os.path.exists(localFile):
+                self.p4.run_delete('-v', localFile)
+            else:
+                self.p4.run_edit('-t', file_change_rev.type, localFile)
+        else:
+            msg = ('%s does not exist in target depot, '
+                   'adding instead of editing it.' %
+                   file_change_rev.fixedLocalFile)
+            self.logger.warning(msg)
+            self.p4.run_add('-ft', file_change_rev.type,
+                            file_change_rev.fixedLocalFile)
+
+        self.checkWarnings(file_change_rev.action)
 
     def replicate_change_action_add(self, file_change_rev, sourcePort):
         f = file_change_rev
@@ -543,6 +652,9 @@ class ReplicationP4(ReplicationSCM):
                 # This is a re-add
                 self.replicateIntegration(f, sourcePort)
                 self.checkWarnings('add from (add)')
+            if f.integrations[0].how == 'ignored':
+                self.p4.run_add('-ft', f.type, f.fixedLocalFile)
+                self.checkWarnings(f.action)
             else:
                 # This is a branch followed by an edit.
                 tempFile = os.path.join(os.path.split(f.localFile)[0],
@@ -554,22 +666,26 @@ class ReplicationP4(ReplicationSCM):
                 self.checkWarnings('branch (add)')
 
                 fstats = self.p4.run_fstat('-Or', '-m1', f.localFile)
-                fstat = fstats[0]
-                f.action = 'add'
-                # If this action was converted from branch->add
-                # there's nothing to do as the local file is already
-                # correct
-                # print("foo = " + fstat['action'])
-                # and a subsequent call to edit will fail as the file
-                # is already marked for add
-                if fstat['action'] != 'add':
-                    self.p4.run_edit('-t', f.type, f.localFile)
-                    self.checkWarnings('edit (add)')
-                    shutil.copyfile(tempFile, f.fixedLocalFile)
+                if fstats:
+                    fstat = fstats[0]
+                    f.action = 'add'
+                    # If this action was converted from branch->add
+                    # there's nothing to do as the local file is already
+                    # correct
+                    # print("foo = " + fstat['action'])
+                    # and a subsequent call to edit will fail as the file
+                    # is already marked for add
+                    if fstat['action'] != 'add':
+                        self.p4.run_edit('-t', f.type, f.localFile)
+                        self.checkWarnings('edit (add)')
+                        shutil.copyfile(tempFile, f.fixedLocalFile)
+                else:
+                    # The file is missing, need to re-add
+                    self.p4.run_add('-ft', f.type, f.fixedLocalFile)
+                    self.checkWarnings(f.action)
 
                 os.remove(tempFile)
         else:
-            #print('Basic add ' + f.fixedLocalFile)
             self.p4.run_add('-ft', f.type, f.fixedLocalFile)
             self.checkWarnings(f.action)
 
@@ -611,11 +727,12 @@ class ReplicationP4(ReplicationSCM):
                 self.p4.run_edit('-t', file_change_rev.type,
                                  file_change_rev.localFile)
                 warnings = self.checkWarnings('edit (integrate)')
-                fn = file_change_rev.fixedLocalFile[len(self.root)+1:]
-                file_not_on_client = any([('file(s) not on client.' in w and fn in w)
-                                          for w in warnings])
+                fn = file_change_rev.fixedLocalFile[len(self.root) + 1:]
+                file_not_on_client = any(
+                    [('file(s) not on client.' in w and fn in w) for w in warnings])
                 if file_not_on_client:
-                    self.logger.warning('Cannot edit %s, not on client, adding it' % fn)
+                    self.logger.warning(
+                        'Cannot edit %s, not on client, adding it' % fn)
                     self.p4.run_add('-ft', file_change_rev.type,
                                     file_change_rev.fixedLocalFile)
             else:
@@ -642,16 +759,52 @@ class ReplicationP4(ReplicationSCM):
         fstats = self.p4.run_fstat('-m1', file_change_rev.targetDepotFile)
         if not fstats:
             msg = 'Failed to retrieve fstat for %s' % file_change_rev.targetDepotFile
-            #raise RepP4Exception(msg)
+            # raise RepP4Exception(msg)
             self.logger.error(msg)
             return
 
-        if not 'action' in fstats[0]:
+        if 'action' not in fstats[0]:
             msg = 'Failed to replicate "%s" for target %s' % (
                 file_change_rev.action, file_change_rev.targetDepotFile)
             raise RepP4Exception(msg)
 
-    def replicate_change(self, files_change_rev, p4_change, sourcePort):
+    def add_base(
+            self,
+            src_changelist,
+            p4_change,
+            sourceP4):
+        sourcePort = sourceP4.p4.port
+        """ This will add the main folder
+        """
+        dirs = self.p4.run_dirs(os.path.join(self.p4.cwd, "*"))
+        if dirs:
+            msg = '%s path alrady exists in depot, base should be replicate to an empty destination' % (self.p4.cwd)
+            raise RepP4Exception(msg)
+
+        sourceP4.sync_to_change(src_changelist)
+        self.p4.run('add', os.path.join(self.p4.cwd, "..."))
+        # submit change
+        orig_submitter = p4_change.get('user')
+        orig_submit_time = p4_change.get('time')
+        try:
+            new_change = self.submit_opened_files(p4_change['desc'],
+                                          p4_change['change'],
+                                          sourcePort,
+                                          orig_submitter,
+                                          orig_submit_time)
+        except P4Exception as e:
+            self.logger.error(e)
+            raise e
+
+        return new_change
+
+    def replicate_change(
+            self,
+            src_changelist,
+            files_change_rev,
+            p4_change,
+            sourceP4):
+        sourcePort = sourceP4.p4.port
         """This is the heart of it all. Replicate all changes according to
         their description
         """
@@ -660,13 +813,15 @@ class ReplicationP4(ReplicationSCM):
         files_to_rep = self.get_target_depotfile(files_to_rep)
         self.verify_depotfile_revisions(files_to_rep)
 
-        action_to_func = {'edit':self.replicate_change_action_edit,
-                          'add':self.replicate_change_action_add,
-                          'delete':self.replicate_change_action_del,
-                          'branch':self.replicate_change_action_branch,
-                          'integrate':self.replicate_change_action_integrate,
-                          'move/add':self.replicate_change_action_move_add,
-                          'move/delete':self.replicate_change_action_move_del,}
+        action_to_func = {'edit': self.replicate_change_action_edit,
+                          'add': self.replicate_change_action_add,
+                          'delete': self.replicate_change_action_del,
+                          'branch': self.replicate_change_action_branch,
+                          'integrate': self.replicate_change_action_integrate,
+                          'move/add': self.replicate_change_action_move_add,
+                          'move/delete': self.replicate_change_action_move_del,
+                          'purge': self.replicate_change_action_purge,
+        }
 
         for file_change_rev in files_to_rep:
             self.logger.debug('replay p4 action: %s' % file_change_rev)
@@ -696,16 +851,58 @@ class ReplicationP4(ReplicationSCM):
 
             action_func(file_change_rev, sourcePort)
 
-            #self.verify_replicate_action(file_change_rev)
+            # self.verify_replicate_action(file_change_rev)
 
         # submit change
         orig_submitter = p4_change.get('user')
         orig_submit_time = p4_change.get('time')
-        new_change = self.submit_opened_files(p4_change['desc'],
-                                              p4_change['change'],
-                                              sourcePort,
-                                              orig_submitter,
-                                              orig_submit_time)
+        try:
+            new_change = self.submit_opened_files(p4_change['desc'],
+                                                  p4_change['change'],
+                                                  sourcePort,
+                                                  orig_submitter,
+                                                  orig_submit_time)
+        except P4Exception as e:
+            self.logger.error(e)
+            if not check_if_known_issue(e):
+                raise e
+            else:
+                fail_changelist = (
+                    re.search(
+                        r'p4 submit -c (\d+)',
+                        str(e).strip())).group(1)
+                # Igrnore integration and use edit/add/remove instead
+                self.p4.run_revert('...')
+                self.p4.run('change', '-d', fail_changelist)
+                sourceP4.sync_to_change(src_changelist)
+
+                action_to_func['integrate'] = self.force_replicate_ignore_action
+
+                for file_change_rev in files_to_rep:
+                    self.logger.warning(files_to_rep)
+                    self.logger.debug('replay p4 action: %s' % file_change_rev)
+                    rep_unicode_type = 'unicode' in file_change_rev.type
+                    if not self.p4.is_unicode_server() and rep_unicode_type:
+                        orig_filetype = file_change_rev.type
+                        self.logger.debug('orig_filetype: %s' % orig_filetype)
+                        file_change_rev.type = orig_filetype.replace('unicode',
+                                                                     'text')
+
+                    action_func = action_to_func.get(file_change_rev.action)
+                    if not action_func:
+                        msg = 'Unexpected "%s" for %s#%s.' % (file_change_rev.action,
+                                                              file_change_rev.depotFile,
+                                                              file_change_rev.rev)
+                        raise RepP4Exception(msg)
+
+                    action_func(file_change_rev, sourcePort)
+
+                new_change = self.submit_opened_files(
+                    "ReplicationBot: Warning, couldn't submit this change as an integration, using edit/add/remove instead\n\n" + p4_change['desc'],
+                    p4_change['change'],
+                    sourcePort,
+                    orig_submitter,
+                    orig_submit_time)
 
         if self.cli_arguments.replicate_user_and_timestamp:
             self.update_change(new_change, orig_submitter, orig_submit_time)
@@ -790,7 +987,8 @@ class ReplicationP4(ReplicationSCM):
         self.logger.debug('%s %s' % (new_change._user, new_change._date))
         try:
             self.p4.save_change(new_change, '-f')
-        except P4Exception, e:
+
+        except P4Exception:
             self.logger.error('"admin" perm needed for "p4 change -f"')
             raise
 
@@ -800,7 +998,13 @@ class ReplicationP4(ReplicationSCM):
                              for x in result
                              if 'refreshFile' in x]
         if revisionsToVerify:
-            self.p4.run_verify('-qv', revisionsToVerify)
+            try:
+                self.p4.run_verify('-qv', revisionsToVerify)
+
+            except P4Exception as e:
+                if "You don't have permission for this operation" not in str(
+                        e):
+                    raise
 
     def checkIntegration(self, file_change_rev, expectedResolveAction):
         localFile, targetDepotFile, action = (file_change_rev.localFile,
@@ -813,7 +1017,7 @@ class ReplicationP4(ReplicationSCM):
             raise RepP4Exception(msg)
 
         fstat = fstats[0]
-        if not 'action' in fstat:
+        if 'action' not in fstat:
             pprint(fstats)
             msg = 'Failed to replicate action "%s" into ' \
                   'target %s' % (action, targetDepotFile)
@@ -831,8 +1035,7 @@ class ReplicationP4(ReplicationSCM):
                                 expectedResolveAction)
 
         num_integration = len(file_change_rev.integrations)
-        if (len(resolveActions) < 1 or
-            len(resolveActions) > num_integration + 1):
+        if (len(resolveActions) < 1 or len(resolveActions) > num_integration + 1):
             raise RepP4Exception(msg)
 
         def resolve_action_variants(resolve_action):
@@ -840,7 +1043,8 @@ class ReplicationP4(ReplicationSCM):
             target file was deleted before integration, resolve action
             'copy from' would become 'branch from'.
             '''
-            acceptable_resolve_action_variants = (('copy from', 'branch from'),)
+            acceptable_resolve_action_variants = (
+                ('copy from', 'branch from'),)
             for variants in acceptable_resolve_action_variants:
                 if resolve_action in variants:
                     return variants
@@ -853,8 +1057,7 @@ class ReplicationP4(ReplicationSCM):
         else:
             raise RepP4Exception(msg)
 
-        if (len(resolveActions) > num_integration and
-            resolveActions[-1] != 'resolved'):
+        if (len(resolveActions) > num_integration and resolveActions[-1] != 'resolved'):
             raise RepP4Exception(msg)
 
     def translate_integration(self, src_integ, sourcePort):
@@ -893,24 +1096,36 @@ class ReplicationP4(ReplicationSCM):
             self.logger.warning(msg)
             raise RepP4Exception(msg)
 
-        src_rev_changes = [(rev.rev, rev.change)
-                           for rev in src_filelog[0].revisions]
+        def dt_to_epoch(dt):
+            return (dt - datetime.utcfromtimestamp(0)).total_seconds()
+
+        src_rev_changes = [(rev.rev, rev.change, dt_to_epoch(
+            rev.time), rev.user) for rev in src_filelog[0].revisions]
 
         # find exact match of src srev/erev
         src_end_change = None
+        src_end_user = None
+        src_end_time = None
+
         src_start_change = None
-        for rev, change in src_rev_changes:
+        src_start_user = None
+        src_start_time = None
+        for rev, change, submit_time, submit_user in src_rev_changes:
             if rev == src_end_rev:
                 src_end_change = change
+                src_end_user = submit_user
+                src_end_time = submit_time
             if rev == src_start_rev:
                 src_start_change = change
+                src_start_user = submit_user
+                src_start_time = submit_time
 
         dst_rev_desc = [(rev.rev, rev.desc)
                         for rev in dst_filelog[0].revisions]
         # find exact match of dst erev
         dst_end_rev = None
-        src_end_change_desc_prefix = self.format_replication_info(src_end_change,
-                                                                  sourcePort)
+        src_end_change_desc_prefix = self.format_replication_info(
+            src_end_change, sourcePort, src_end_user, src_end_time)
         for rev, desc in dst_rev_desc:
             if src_end_change_desc_prefix in desc:
                 dst_end_rev = rev
@@ -918,14 +1133,13 @@ class ReplicationP4(ReplicationSCM):
         dst_rev_desc.reverse()
         # find nearest of dst srev if no exact match
         dst_start_rev = dst_end_rev
-        dst_start_rev_desc_prefix = self.format_replication_info(src_start_change,
-                                                                 sourcePort)
+        dst_start_rev_desc_prefix = self.format_replication_info(
+            src_start_change, sourcePort, src_start_user, src_start_time)
         for rev, desc in dst_rev_desc:
             if dst_start_rev_desc_prefix in desc:
                 dst_start_rev = rev
 
-        if (src_integ.srev != dst_start_rev or
-            src_integ.erev != dst_end_rev):
+        if (src_integ.srev != dst_start_rev or src_integ.erev != dst_end_rev):
             msg = '%s srev/erev: %s/%s, now: %s/%s' % (dst_depotFile,
                                                        src_start_rev,
                                                        src_end_rev,
@@ -944,9 +1158,8 @@ class ReplicationP4(ReplicationSCM):
                                                               src_end_rev)
             self.logger.warning(msg)
             raise RepP4Exception(msg)
-        else:
-            src_integ.srev = str(dst_start_rev)
-            src_integ.erev = str(dst_end_rev)
+        src_integ.srev = str(dst_start_rev)
+        src_integ.erev = str(dst_end_rev)
 
     def _no_integrate(self, file_change_rev, integ):
         ftype, action, localFile, fixedLocalFile = (file_change_rev.type,
@@ -955,7 +1168,7 @@ class ReplicationP4(ReplicationSCM):
                                                     file_change_rev.fixedLocalFile)
 
         if integ.how in ('branch from', 'add from'):
-             self.p4.run_add('-ft', ftype, fixedLocalFile)
+            self.p4.run_add('-ft', ftype, fixedLocalFile)
         elif integ.how in ('delete from'):
             self.p4.run_delete('-v', localFile)
         elif integ.how in ('copy from'):
@@ -978,36 +1191,15 @@ class ReplicationP4(ReplicationSCM):
             self.p4.run_edit('-t', ftype, localFile)
         elif integ.how in ('ignored'):
             self.logger.info("ignored : %s %s " % (action, fixedLocalFile))
-
-            if action in ('add', 'delete', 'branch', 'integrate'):
-                self.p4.run_sync('-f', localFile)
-                if self.EMPTY_FILE:
-                    self.p4.run_integrate('-f', '-Rb', '-Rd',
-                                          '%s#1' % self.EMPTY_FILE, localFile)
-                    self.checkWarnings(action)
-                    self.p4.run_resolve('-ay')
-                else:
-                    # haven't yet found a way to not use empty file
-                    # for integration "ignored"
-                    msg = 'please set --target-empty-file for replication ' \
-                          'of "integration ignored"'
-                    raise RepP4Exception(msg)
-            elif action in ('edit'):
-                self.p4.run_sync('-k', localFile)
-                self.p4.run_edit(localFile)
-            else:
-                msg = 'Unexpected ignoreed action "%s" for %s#%s' % (
-                    action, depotFile, file_change_rev.rev)
-                raise RepP4Exception(msg)
+            self.p4.run_sync('-k', localFile)
+            self.p4.run_edit(localFile)
         else:
-            msg = 'Unexpected action %s for %s#%s' % (integ.how,
-                                                      file_change_rev.depotFile,
-                                                      file_change_rev.rev)
+            msg = 'Unexpected action %s for %s#%s' % (
+                integ.how, file_change_rev.depotFile, file_change_rev.rev)
             raise RepP4Exception(msg)
 
     def replicate_file_integrate(self, file_change_rev, integ):
-        if (self.cli_arguments.nointegrate or
-            not integ.localFile or not integ.targetDepotFile):
+        if (self.cli_arguments.nointegrate or not integ.localFile or not integ.targetDepotFile):
             self._no_integrate(file_change_rev, integ)
             return
 
@@ -1017,16 +1209,20 @@ class ReplicationP4(ReplicationSCM):
         partner_file_rev = '%s#%s,#%s' % (partner.targetDepotFile,
                                           partner.srev, partner.erev)
 
+        if partner.how not in (
+                'undid') and partner.targetDepotFile == self.depotmap.translate(localFile):
+            # If file and partner file are the same, p4 integrate
+            # doesn't work.
+            partner.how = 'copy from'
         if not self.cli_arguments.allowmerge and partner.how == 'merge from':
             partner.how = 'edit from'
 
         if partner.how in ('add from'):
-            self.p4.run_sync('-k', '%s#%s' % (partner.targetDepotFile, partner.erev))
+            self.p4.run_sync('-k', '%s#%s' %
+                             (partner.targetDepotFile, partner.erev))
             self.p4.run_add('-ft', file_change_rev.type, fixedLocalFile)
-        elif (partner.how in ('copy from') and
-              partner.targetDepotFile == file_change_rev.targetDepotFile):
-            # If file and partner file are the same, p4 integrate
-            # doesn't work.
+        elif (partner.how in ('copy from') and partner.targetDepotFile == file_change_rev.targetDepotFile):
+            # If file and partner file are the same, p4 integrate doesn't work.
             self.p4.run_sync('-k', file_change_rev.targetDepotFile)
             cmd = '-f "%s"#%s "%s"' % (partner.targetDepotFile,
                                        partner.erev,
@@ -1036,23 +1232,27 @@ class ReplicationP4(ReplicationSCM):
             # do not check integration
             return
         elif partner.how in ('branch from', 'delete from', 'copy from'):
-            self.p4.run_integrate('-f','-t','-Rb','-Rd','-Di',
+            self.p4.run_integrate('-f', '-t', '-Rb', '-Rd', '-Di',
                                   partner_file_rev, localFile)
             self.p4.run_resolve('-at')
         elif partner.how in ('ignored'):
-            self.p4.run_sync('-f', localFile)    # to avoid tamper checking
-            self.p4.run_integrate('-f','-t','-Rb','-Rd','-Di',
+            self.p4.run_sync('-f', localFile)  # to avoid tamper checking
+
+            self.p4.run_integrate('-f', '-t', '-Rb', '-Rd', '-Di',
                                   partner_file_rev, localFile)
             self.p4.run_resolve('-ay')
         elif partner.how in ('merge from'):
-            self.p4.run_sync('-f', localFile)    # to avoid tamper checking
+            self.p4.run_sync('-f', localFile)  # to avoid tamper checking
+            if not os.path.isfile(localFile):
+                partner_file_rev = '%s#%s' % (partner.targetDepotFile,
+                                              partner.erev)
             self.p4.run_integrate(partner_file_rev, localFile)
 
             class MyResolver(Resolver):
                 def resolve(self, mergeData):
                     return 'am'
 
-            myResolver=MyResolver()
+            myResolver = MyResolver()
             self.p4.run_resolve(resolver=myResolver)
 
         elif partner.how in ('edit from'):
@@ -1060,7 +1260,7 @@ class ReplicationP4(ReplicationSCM):
                                     str(uuid.uuid4()))
             shutil.copyfile(fixedLocalFile, tempFile)
 
-            self.p4.run_sync('-f', localFile)    # to avoid tamper checking
+            self.p4.run_sync('-f', localFile)  # to avoid tamper checking
             self.p4.run_integrate('-f', partner_file_rev, localFile)
 
             class MyResolver(Resolver):
@@ -1072,9 +1272,11 @@ class ReplicationP4(ReplicationSCM):
                     os.rename(self.edit_path, mergeData.result_path)
                     return 'ae'
 
-            myResolver=MyResolver(tempFile)
+            myResolver = MyResolver(tempFile)
             self.p4.run_resolve(resolver=myResolver)
             os.unlink(tempFile)
+        elif partner.how in ('undid'):
+            self.p4.run_undo(partner_file_rev)
         else:
             msg = 'Unexpected integration action %s' % partner.how
             raise RepP4Exception(msg)
@@ -1097,11 +1299,15 @@ class ReplicationP4(ReplicationSCM):
         while integ.how == 'ignored' and integrations:
             integ = integrations.pop()
 
+        if file_change_rev.action == 'delete':
+            while not integ.how.startswith('delete') and integrations:
+                integ = integrations.pop()
+
         try:
-            if (not self.cli_arguments.nointegrate and
-                integ.localFile and integ.targetDepotFile):
+            if (not self.cli_arguments.nointegrate and integ.localFile and integ.targetDepotFile):
                 self.translate_integration(integ, source_port)
-        except RepP4Exception, e:
+
+        except RepP4Exception:
             msg = 'Abort integration, just add/edit the file.'
             self.logger.warning(msg)
 
@@ -1114,7 +1320,6 @@ class ReplicationP4(ReplicationSCM):
             return
 
         self.replicate_file_integrate(file_change_rev, integ)
-
 
     def _replicate_move(self, file_change_rev, source_port):
         num_integs = len(file_change_rev.integrations)
@@ -1136,23 +1341,31 @@ class ReplicationP4(ReplicationSCM):
                      st.st_mode | stat.S_IWUSR | stat.S_IWGRP | stat.S_IWOTH)
 
         if num_integs > 1:
-            msg = '%s has multiple integrations: %s' % (file_change_rev.depotFile,
-                                                        file_change_rev.integrations)
+            msg = '%s has multiple integrations: %s' % (
+                file_change_rev.depotFile, file_change_rev.integrations)
             self.logger.warning(msg)
 
             # fall back to "edit" or "add"
             if file_exists_in_target:
-                self.p4.run_edit('-k','-t', file_change_rev.type, file_change_rev.localFile)
+                self.p4.run_edit(
+                    '-k',
+                    '-t',
+                    file_change_rev.type,
+                    file_change_rev.localFile)
                 self.checkWarnings('edit (from)')
                 shutil.copyfile(tempFile, file_change_rev.fixedLocalFile)
             else:
-                self.p4.run_add('-ft', file_change_rev.type, file_change_rev.fixedLocalFile)
+                self.p4.run_add(
+                    '-ft',
+                    file_change_rev.type,
+                    file_change_rev.fixedLocalFile)
 
             return
 
         moved = False
         # sort integrations by "how", integrate 'moved from' first
-        file_change_rev.integrations.sort(key=lambda x: not x.how.startswith('moved'))
+        file_change_rev.integrations.sort(
+            key=lambda x: not x.how.startswith('moved'))
 
         for idx, integ in enumerate(file_change_rev.integrations):
             self.logger.info('move integation index = %d' % idx)
@@ -1166,32 +1379,40 @@ class ReplicationP4(ReplicationSCM):
             if integ.targetDepotFile and integ.how == 'moved from':
                 integ_erev = int(integ.erev)
                 movefrom_file = integ.targetDepotFile
-                movefrom_file_filelog = self.p4.run_filelog('-m1', '%s#head' % movefrom_file)
-                movefrom_file_headrev = movefrom_file_filelog[0].revisions[0].rev
-                if integ_erev < movefrom_file_headrev:
-                    msg = 'Move from some non-last-revision of file %d < %s%d' \
+                movefrom_file_filelog = self.p4.run_filelog(
+                    '-m1', '%s#head' % movefrom_file)
+                if not movefrom_file_filelog:
+                    msg = 'Move from some non-exist file %d' \
                           'Add/delete instead of move/add move/delete' % (
-                              integ_erev, movefrom_file, movefrom_file_headrev)
+                              integ_erev)
                     self.logger.error(msg)
                     move_from_last_revision_of_file = False
-                
-            if (self.cli_arguments.nointegrate == False and
-                integ.localFile and integ.targetDepotFile and
-                target_has_correct_revison and
-                move_from_last_revision_of_file):
+                else:
+                    movefrom_file_headrev = movefrom_file_filelog[0].revisions[0].rev
+                    if integ_erev < movefrom_file_headrev:
+                        msg = 'Move from some non-last-revision of file %d < %s%d' \
+                              'Add/delete instead of move/add move/delete' % (
+                                  integ_erev, movefrom_file, movefrom_file_headrev)
+                        self.logger.error(msg)
+                        move_from_last_revision_of_file = False
 
-                self.logger.debug('integ.how = "%s"' % integ.how)
+            if (not self.cli_arguments.nointegrate and integ.localFile and integ.targetDepotFile and target_has_correct_revison and move_from_last_revision_of_file):
+                self.logger.debug('integ.how = "%s"', integ.how)
                 if integ.how in ('moved from'):
                     self.logger.debug(file_change_rev.localFile)
-                    self.logger.debug('%s moved from %s'% (file_change_rev.localFile,
-                                                           integ))
-                    self.p4.run_sync('-f','{}#{}'.format(integ.targetDepotFile, integ.erev))
+                    self.logger.debug('%s moved from %s', (file_change_rev.localFile, integ))
+                    self.p4.run_sync(
+                        '-f',
+                        '{}#{}'.format(
+                            integ.targetDepotFile,
+                            integ.erev))
                     self.p4.run_edit(integ.targetDepotFile)
                     self.p4.run_move('-k', integ.targetDepotFile,
                                      file_change_rev.localFile)
                     moved = True
 
-                    self.logger.debug('checkIntegration' + file_change_rev.depotFile)
+                    self.logger.debug(
+                        'checkIntegration' + file_change_rev.depotFile)
                     self.checkIntegration(file_change_rev, integ.how)
                     self.logger.debug('checkIntegration - passed')
                 else:
@@ -1200,24 +1421,29 @@ class ReplicationP4(ReplicationSCM):
                 self.logger.info('integ.how = ' + integ.how)
                 self.logger.info('replicateMove - else ' + file_change_rev.localFile)
                 if integ.how in ('moved from'):
-                    self.p4.run_add('-ft', file_change_rev.type, file_change_rev.fixedLocalFile)
+                    self.p4.run_add(
+                        '-ft',
+                        file_change_rev.type,
+                        file_change_rev.fixedLocalFile)
                 elif integ.how in ('branch from', 'merge from'):
-                    # self.p4.run_edit('-k','-t', file_change_rev.type, file_change_rev.localFile)
+                    # self.p4.run_edit('-k', '-t', file_change_rev.type, file_change_rev.localFile)
                     # self.checkWarnings('edit (move)')
                     shutil.copyfile(tempFile, file_change_rev.fixedLocalFile)
                 elif integ.how in ('edit from'):
-                    self.p4.run_edit('-k','-t', file_change_rev.type, file_change_rev.localFile)
+                    self.p4.run_edit(
+                        '-k',
+                        '-t',
+                        file_change_rev.type,
+                        file_change_rev.localFile)
                     self.checkWarnings('edit (from)')
                     shutil.copyfile(tempFile, file_change_rev.fixedLocalFile)
-                elif integ.how in ('copy from') and moved == True:
+                elif integ.how in ('copy from') and moved:
                     continue
-                elif integ.how in ('copy from') and moved == False:
+                elif integ.how in ('copy from') and not moved:
                     continue
                 else:
-                    msg = 'Unexpected action %s for %s#%s' % (integ.how,
-                                                              file_change_rev.depotFile,
-                                                              file_change_rev.rev)
+                    msg = 'Unexpected action %s for %s#%s' % (
+                        integ.how, file_change_rev.depotFile, file_change_rev.rev)
                     raise RepP4Exception()
 
         self.checkWarnings(file_change_rev.action)
-

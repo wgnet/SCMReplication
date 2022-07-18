@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/python3
 
 '''svn to p4 replication script
 '''
@@ -8,18 +8,17 @@ import os
 import sys
 import tempfile
 
-from lib.buildlogger import getLogger, set_logging_color_format
-from lib.buildcommon import (working_in_dir, remove_dir_contents)
+from lib.buildlogger import getLogger
+from lib.buildcommon import remove_dir_contents
 from lib.scmrepargs import get_arguments
 from lib.p4server import P4Server
-from lib.PerforceReplicate import P4Transfer
-from lib.SvnPython import SvnPython 
+from lib.SvnPython import SvnPython
 from P4P4Replicate import (create_p4_workspace,
                            delete_p4_workspace,)
 from lib.SubversionToPerforce import SubversionToPerforce
 
 logger = getLogger(__name__)
-logger.setLevel('DEBUG')
+logger.setLevel('INFO')
 
 
 def create_Svn2P4_cfg_file(src_cfg, dst_cfg):
@@ -32,13 +31,13 @@ def create_Svn2P4_cfg_file(src_cfg, dst_cfg):
     '''
     svn_cfg_item = ['svn_client_root', 'svn_repo_label',
                     'svn_project_dir', 'svn_repo_url', 'svn_user',
-                    'svn_passwd', 'counter', 'endchange', 'svn_view_mapping',]
+                    'svn_passwd', 'counter', 'endchange', 'svn_view_mapping', ]
     p4_cfg_item = ['p4client', 'p4port', 'p4user', 'p4passwd']
 
     src_cfg_str = '\n'.join(['%s=%s' % (k, v)
                              for k, v in src_cfg.items()
                              if k in svn_cfg_item and v is not None])
-    tgt_cfg_str = '\n'.join(['%s=%s' %(k, v)
+    tgt_cfg_str = '\n'.join(['%s=%s' % (k, v)
                              for k, v in dst_cfg.items()
                              if k in p4_cfg_item and v is not None])
     src_content = '[source]\n' + src_cfg_str
@@ -48,7 +47,7 @@ def create_Svn2P4_cfg_file(src_cfg, dst_cfg):
     cfg_content = '\n'.join([src_content, tgt_content, gen_content])
 
     cfg_fd, cfg_path = tempfile.mkstemp(suffix='.cfg', text=True)
-    os.write(cfg_fd, cfg_content)
+    os.write(cfg_fd, str.encode(cfg_content))
     os.close(cfg_fd)
 
     return cfg_path
@@ -59,9 +58,9 @@ def replicate(args):
     script and call it to replicate.
     '''
     if (not hasattr(args, 'source_workspace_view_cfgfile') or
-        not args.source_workspace_view_cfgfile):
+            not args.source_workspace_view_cfgfile):
         if (hasattr(args, 'source_replicate_dir_cfgfile') and
-            args.source_replicate_dir_cfgfile):
+                args.source_replicate_dir_cfgfile):
             args.source_workspace_view_cfgfile = args.source_replicate_dir_cfgfile
         else:
             logger.error('cfg file for source dir to replicate required')
@@ -76,7 +75,7 @@ def replicate(args):
                'ws_root': args.workspace_root,
                'mappingcfg': args.source_workspace_view_cfgfile,
                'svn_repo_label': args.source_port,
-               'svn_client_root': args.workspace_root,}
+               'svn_client_root': args.workspace_root, }
 
     dst_cfg = {'p4port': args.target_port,
                'p4user': args.target_user,
@@ -138,19 +137,19 @@ def replicate(args):
             sys.argv.extend(['--verbose', args.verbose])
 
         if (hasattr(args, 'prefix_description_with_replication_info')
-            and args.prefix_description_with_replication_info):
+                and args.prefix_description_with_replication_info):
             sys.argv.append('--prefix-description-with-replication-info')
 
         if args.replicate_user_and_timestamp:
             sys.argv.extend(['--replicate-user-and-timestamp'])
 
         if (hasattr(args, 'svn_ignore_externals') and
-            args.svn_ignore_externals):
+                args.svn_ignore_externals):
             sys.argv.extend(['--svn-ignore-externals'])
 
         # let's go
         ret = SubversionToPerforce()
-    except Exception, e:
+    except Exception as e:
         logger.error(e)
         raise
     else:
@@ -160,6 +159,7 @@ def replicate(args):
         delete_p4_workspace(dst_p4)
 
     return ret
+
 
 if __name__ == '__main__':
     args = get_arguments('SVN', 'P4')

@@ -1,15 +1,16 @@
 
 # class for common replication classes
 
+
 class ReplicationException(Exception):
     pass
 
-class Replication(object):
+
+class Replication():
 
     def _calc_start_cl_target_depot_not_exist(self):
         '''case 0: target doesn't exist
         '''
-        pass
 
     def _calc_start_cl_resume_replication(self, rev_in_last_change):
         '''case 1: found replication info from last target changelist
@@ -29,10 +30,10 @@ class Replication(object):
             self.source.counter = rev_in_last_change
 
             return
-        else:
-            msg = 'src counter(%s) > last replicated ' \
-                  'rev (%s)' % (self.source.counter, rev_in_last_change)
-            raise ReplicationException(msg)
+
+        msg = 'src counter(%s) > last replicated ' \
+            'rev (%s)' % (self.source.counter, rev_in_last_change)
+        raise ReplicationException(msg)
 
     def _calc_start_cl_target_depot_has_no_rep_info(self, num_target_revs):
         '''case 2: target exists but found no replication info
@@ -58,12 +59,10 @@ class Replication(object):
             msg = 'src counter is 0(default) while last ' \
                   'replicated rev is %s' % last_rep_rev
             raise ReplicationException(msg)
-        elif self.source.counter < last_rep_rev:
+        if self.source.counter < last_rep_rev:
             msg = 'src counter(%s) < last replicated rev(%s)' % (
                 self.source.counter, last_rep_rev)
             raise ReplicationException(msg)
-        else:
-            return
 
     def calc_start_changelist(self):
         '''re-calculate source counter changelist
@@ -103,7 +102,7 @@ class Replication(object):
 
         # case 2
         # remove slots that has no rep info in desc
-        repped_revs = filter(lambda x: x, repped_revs)
+        repped_revs = [x for x in repped_revs if x]
         no_rep_info_found_in_target = len(repped_revs) == 0
         if no_rep_info_found_in_target:
             self._calc_start_cl_target_depot_has_no_rep_info(num_target_revs)

@@ -1,7 +1,8 @@
-#!/usr/bin/env python
+#!/usr/bin/python3
 
 from datetime import datetime, tzinfo, timedelta
 import re
+
 
 class ReplicationException(Exception):
     '''exception raised by replication scripts
@@ -9,17 +10,19 @@ class ReplicationException(Exception):
     '''
     pass
 
+
 default_description_rep_info_pattern = {
-    'formatter':('Imported from {srcserver}\n'
-                 'r{revision}|{submitter}|{submittime}'),
-    'extracter':('Imported from (?P<srcserver>.+)\n'
-                 'r(?P<revision>[0-9]+)\|(?P<submitter>.+)\|(?P<submittime>.+)')
-}
+    'formatter': (
+        'Imported from {srcserver}\n'
+        'r{revision}|{submitter}|{submittime}'), 'extracter': (
+            'Imported from (?P<srcserver>.+)\n'
+            'r(?P<revision>[0-9]+)\|(?P<submitter>.+)\|(?P<submittime>.+)')}
+
 
 def get_revision_from_desc(desc, pattern=default_description_rep_info_pattern):
     description_lines = desc.strip().split('\n')
     description_lines = [l.strip() for l in description_lines]
-    description_lines = filter(None, description_lines)
+    description_lines = [_f for _f in description_lines if _f]
 
     desc_pattern = pattern['extracter']
 
@@ -55,6 +58,7 @@ def get_revision_from_desc(desc, pattern=default_description_rep_info_pattern):
 class ReplicationSCM(object):
     '''base class of svn and p4 replication classes
     '''
+
     def __init__(self, section, cfg_parser):
         #[(str_option_name, boolean_optional), ]
         if not self.option_properties:
@@ -127,8 +131,10 @@ class ReplicationSCM(object):
         if not last_descs:
             return []
 
-        repped_revs = [get_revision_from_desc(desc, pattern=self.description_rep_info_pattern)
-                       for desc in last_descs]
+        repped_revs = [
+            get_revision_from_desc(
+                desc,
+                pattern=self.description_rep_info_pattern) for desc in last_descs]
 
         return repped_revs
 
@@ -156,6 +162,7 @@ class ReplicationSCM(object):
         # date in change is in epoch time, we need it in canonical form
         class UTC(tzinfo):
             """UTC"""
+
             def utcoffset(self, dt):
                 return timedelta(0)
 
@@ -167,7 +174,8 @@ class ReplicationSCM(object):
 
         utc = UTC()
         if orig_submit_time:
-            orig_submit_time_dt = datetime.fromtimestamp(float(orig_submit_time), utc)
+            orig_submit_time_dt = datetime.fromtimestamp(
+                float(orig_submit_time), utc)
             orig_submit_time_isofmt = orig_submit_time_dt.isoformat()
         else:
             orig_submit_time_isofmt = ''
@@ -208,5 +216,3 @@ class ReplicationSCM(object):
         desc = self.sanitise_commit_message(desc)
 
         return desc
-
-

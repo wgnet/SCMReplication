@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/python3
 
 #
 # build logging facility
@@ -6,9 +6,10 @@
 
 import logging
 
-_CURRENT_LOGGING_TARGET = 'none'
+_CURRENT_LOGGING_TARGET = 'console'
 
-class LoggingColor(object):
+
+class LoggingColor():
     color_names = ['black', 'red', 'green', 'yellow', 'blue', 'magenta',
                    'cyan', 'white']
 
@@ -20,7 +21,9 @@ class LoggingColor(object):
         'WARNING': 'yellow',
         'INFO': 'black',
         'DEBUG': 'blue',
-        }
+    }
+    color_seq = ""
+    reset_seq = ""
 
     # color name to color value mapping
     color_value_mapping = {}
@@ -38,24 +41,27 @@ class LoggingColor(object):
 
 class ConsoleColor(LoggingColor):
     def __init__(self):
-        #These are the sequences need to get colored ouput
+        # These are the sequences need to get colored ouput
         self.color_seq = "\033[1;{}m"
         self.reset_seq = "\033[0m"
-        self.color_value_mapping = dict(zip(self.color_names, range(30, 38)))
+        self.color_value_mapping = dict(
+            list(zip(self.color_names, list(range(30, 38)))))
 
         # support background highlight
         bg_color_names = ['background_%s' % cn for cn in self.color_names]
-        self.color_value_mapping.update(zip(bg_color_names, range(40, 48)))
+        self.color_value_mapping.update(
+            list(zip(bg_color_names, list(range(40, 48)))))
 
         super(ConsoleColor, self).__init__()
 
 
 class NoneColor(LoggingColor):
     def __init__(self):
-        #These are the sequences need to get colored ouput
+        # These are the sequences need to get colored ouput
         self.color_seq = ''
         self.reset_seq = ''
-        self.color_value_mapping = dict(zip(self.color_names, self.color_names))
+        self.color_value_mapping = dict(
+            list(zip(self.color_names, self.color_names)))
 
         super(NoneColor, self).__init__()
 
@@ -63,8 +69,8 @@ class NoneColor(LoggingColor):
 class ColoredFormatter(logging.Formatter):
     def __init__(self, fmt, **kwargs):
         super(ColoredFormatter, self).__init__(fmt, **kwargs)
-        self.colors = {'console':ConsoleColor(),
-                       'none':NoneColor(),}
+        self.colors = {'console': ConsoleColor(),
+                       'none': NoneColor(), }
 
     def format(self, record):
         target_corlor = self.colors[_CURRENT_LOGGING_TARGET]
@@ -78,6 +84,7 @@ PASS_LEVEL_NUM = 60
 FAIL_LEVEL_NUM = 61
 logging.addLevelName(PASS_LEVEL_NUM, 'PASS')
 logging.addLevelName(FAIL_LEVEL_NUM, 'FAIL')
+
 
 class ColoredLogger(logging.Logger):
     def __init__(self, name):
@@ -94,14 +101,16 @@ class ColoredLogger(logging.Logger):
     def passed(self, message, *args, **kws):
         # Yes, logger takes its '*args' as 'args'.
         if self.isEnabledFor(PASS_LEVEL_NUM):
-            self._log(PASS_LEVEL_NUM, message, args, **kws) 
+            self._log(PASS_LEVEL_NUM, message, args, **kws)
 
     def failed(self, message, *args, **kws):
         # Yes, logger takes its '*args' as 'args'.
         if self.isEnabledFor(FAIL_LEVEL_NUM):
-            self._log(FAIL_LEVEL_NUM, message, args, **kws) 
+            self._log(FAIL_LEVEL_NUM, message, args, **kws)
+
 
 logging.setLoggerClass(ColoredLogger)
+
 
 def set_logging_color_format(target_fmt='console'):
     '''Tell logging module the output format we need to use to
@@ -113,6 +122,7 @@ def set_logging_color_format(target_fmt='console'):
 
     global _CURRENT_LOGGING_TARGET
     _CURRENT_LOGGING_TARGET = target_fmt
+
 
 def getLogger(loggerName):
     logger = logging.getLogger(loggerName)
@@ -133,4 +143,3 @@ if __name__ == '__main__':
     logger.critical('hello world')
     logger.passed('hello world')
     logger.failed('hello world')
-

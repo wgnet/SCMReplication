@@ -1,50 +1,37 @@
 FROM centos:7
 
-ENV P4JOURNAL /var/log/perforce/journal
-ENV P4LOG /var/log/perforce/p4err
 ENV P4PORT 1666
-ENV P4ROOT /perforce_depot
+ENV P4ROOT /home/perforce/depot
 ENV P4USER testuser
 ENV P4PASSWD testuser
 ENV P4CLIENT perforce-test
-ENV HOME /home/perforce
-
-# Update apt sources
-# RUN yum update -y
 
 # create Perforce user & group
 RUN groupadd p4admin
 RUN useradd -m -g p4admin perforce
 
-# Install perforce server
-ADD http://filehost.perforce.com/perforce/r14.1/bin.linux26x86_64/p4d /usr/local/sbin/
+# Install perforce server and client binaries
+ADD http://filehost.perforce.com/perforce/r18.2/bin.linux26x86_64/p4d /usr/local/sbin/
+ADD http://filehost.perforce.com/perforce/r18.2/bin.linux26x86_64/p4 /usr/local/bin/
+RUN chmod +rx /usr/local/sbin/p4d /usr/local/bin/p4
 
-# Install perforce client
-ADD http://filehost.perforce.com/perforce/r14.1/bin.linux26x86_64/p4 /usr/local/bin/
-
-RUN chmod +x /usr/local/sbin/p4d /usr/local/bin/p4
-
-RUN mkdir $P4ROOT
-RUN chown perforce:p4admin $P4ROOT
-RUN mkdir /var/log/perforce
-RUN chown perforce:p4admin /var/log/perforce
-
-# Populate test workspace and perforce database
-RUN yum install wget -y
-RUN wget -O /tmp/sampledepot.tar.gz http://ftp.perforce.com/perforce/tools/sampledepot.tar.gz
-
-RUN tar xfz /tmp/sampledepot.tar.gz -C /tmp; rm -rf $P4ROOT/db.*; cp -Rf /tmp/PerforceSample/* $P4ROOT
-
-RUN mkdir -p $HOME/Perforce; chown -R perforce:p4admin $HOME
-
-RUN chown -R perforce:p4admin $P4ROOT
-
-
-RUN echo "root:bigworld" | chpasswd
-
+# From here, everything is done as the perforce user
 USER perforce
-RUN p4d -r $P4ROOT -jr $P4ROOT/checkpoint;
 
+# Create directory for Perforce depot
+RUN mkdir $P4ROOT
+
+# Populate Perforce database from Perforce Sample Depot
+# https://community.perforce.com/s/article/2439
+RUN mkdir -p /home/perforce/sample && ( curl http://ftp.perforce.com/perforce/tools/sampledepot.tar.gz | tar xz -C /home/perforce/sample ) && cp -Rf /home/perforce/sample/PerforceSample/* $P4ROOT && rm -rf /home/perforce/sample
+
+# Replay from checkpoint
+RUN p4d -jr $P4ROOT/checkpoint
+
+# Update database to current version
+RUN p4d -xu
+
+# ADD this for debugging -v server=3
 ENTRYPOINT p4d
 
 # Expose port

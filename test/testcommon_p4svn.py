@@ -1,33 +1,27 @@
-#!/usr/bin/env python
+#!/usr/bin/python3
 
 '''test replication of depots in svn repository.
 '''
 
 import os
-import unittest
 import re
 import shutil
-import string
-import time
 import tempfile
-from pprint import pprint, pformat
-from contextlib import contextmanager
-from testcommon import (obliterate_all_depots,
-                        obliterate_depots,
-                        BUILD_TEST_P4D_USER,
-                        BuildTestException,)
+import P4SvnReplicate as P4Svn
+from testcommon import (BUILD_TEST_P4D_USER,
+                        BuildTestException,
+                        scriptRootDir,)
 from lib.p4server import P4Server
-from lib.buildcommon import (generate_file_hash, working_in_dir,
-                             get_dir_file_hash)
+from lib.buildcommon import get_dir_file_hash
 from lib.buildlogger import getLogger
 from lib.SvnPython import SvnPython
-from replicationunittest import ReplicationTestCaseWithDocker
-import P4SvnReplicate as P4Svn
+from replicationunittest import (run_replication_in_container)
 from testcommon_svnp4 import (update_p4d_changed_files,
                               update_svn_changed_files,)
 
 logger = getLogger(__name__)
 logger.setLevel('INFO')
+
 
 def replicate_P4SvnReplicate(src_mapping, dst_mapping,
                              src_docker_cli, dst_docker_cli,
@@ -44,14 +38,17 @@ def replicate_P4SvnReplicate(src_mapping, dst_mapping,
     @param source_last_changeset [in] optional int, last changeset to replicate
     '''
     p4_user = BUILD_TEST_P4D_USER
-    svn_user = 'guest'
-    svn_passwd = 'guest'
+    svn_user = ''
+    svn_passwd = ''
     src_ip = src_docker_cli.get_container_ip_addr()
     dst_ip = dst_docker_cli.get_container_ip_addr()
 
     def create_ws_mapping_file(ws_mapping):
-        cfgFd, cfgPath = tempfile.mkstemp(suffix='.cfg', text=True)
-        os.write(cfgFd, '\n'.join([' '.join(_) for _ in ws_mapping]))
+        cfgFd, cfgPath = tempfile.mkstemp(
+            suffix='.cfg', text=True, dir=os.path.join(
+                scriptRootDir, 'test/replication'))
+        os.write(cfgFd, str.encode(
+            '\n'.join([' '.join(_) for _ in ws_mapping])))
         os.close(cfgFd)
         return cfgPath
 
@@ -63,7 +60,9 @@ def replicate_P4SvnReplicate(src_mapping, dst_mapping,
     source_last_changeset = kwargs.get('source_last_changeset', None)
     ws_root = kwargs.get('ws_root')
     if not ws_root:
-        ws_root = tempfile.mkdtemp(prefix='buildtest')
+        ws_root = tempfile.mkdtemp(
+            prefix='buildtest', dir=os.path.join(
+                scriptRootDir, 'test/replication'))
 
     args = ReplicateCmdArgs()
     args.source_port = '%s:1666' % src_ip
@@ -85,24 +84,29 @@ def replicate_P4SvnReplicate(src_mapping, dst_mapping,
     args.verbose = 'INFO'
 
     try:
-        P4Svn.replicate(args)
+        if os.environ.get("TEST_IN_HOST"):
+            P4Svn.replicate(args)
+        else:
+            script = './P4SvnReplicate.py'
+            run_replication_in_container(script, args)
     finally:
         os.unlink(args.source_workspace_view_cfgfile)
         os.unlink(args.target_workspace_view_cfgfile)
         shutil.rmtree(ws_root)
+
 
 def get_p4_revision_from_svn_changelog(svn, svn_revision):
     output = svn.run_log(start_rev=svn_revision, end_rev=svn_revision)[0]
     message = output['message']
 
     last_line = message.split('\n')[-1]
-    re_pattern = 'r(?P<revision>[0-9]+)\|(?P<submitter>.+)\|(?P<submittime>.+)'
+    re_pattern = r'r(?P<revision>[0-9]+)\|(?P<submitter>.+)\|(?P<submittime>.+)'
 
     match = re.match(re_pattern, last_line)
     if match:
         return match.group('revision')
-    else:
-        return 0
+    return 0
+
 
 def verify_changes(src_p4d, dst_svn, src_root, dst_root, svn_project_subdir,
                    src_changes, dst_changes):
@@ -123,7 +127,7 @@ def verify_changes(src_p4d, dst_svn, src_root, dst_root, svn_project_subdir,
     dst_file_hash = {}
 
     #src_dst_changes = zip(src_changes, dst_changes)
-    #for src_change, dst_change in src_dst_changes:
+    # for src_change, dst_change in src_dst_changes:
     for dst_change in dst_changes:
         src_change = get_p4_revision_from_svn_changelog(dst_svn, dst_change)
         if not src_change:
@@ -140,35 +144,37 @@ def verify_changes(src_p4d, dst_svn, src_root, dst_root, svn_project_subdir,
                                                       src_depot_abspath_map)
         src_file_hash = get_dir_file_hash(src_root, detect_dir=True)
 
-        dst_files, dst_msg = update_svn_changed_files(dst_svn, dst_change, dst_root)
+        dst_files, dst_msg = update_svn_changed_files(
+            dst_svn, dst_change, dst_root)
         if svn_project_subdir:
             logger.debug('svn_project_subdir: %s' % svn_project_subdir)
-            svn_project_subdir_path = os.path.join(dst_root, svn_project_subdir[1:])
+            svn_project_subdir_path = os.path.join(
+                dst_root, svn_project_subdir[1:])
             dst_file_hash = get_dir_file_hash(svn_project_subdir_path,
-                                              exclude=['.svn',],
+                                              exclude=['.svn', ],
                                               detect_dir=True)
         else:
             dst_file_hash = get_dir_file_hash(dst_root,
-                                              exclude=['.svn',],
+                                              exclude=['.svn', ],
                                               detect_dir=True)
 
         src_msg_lines = src_msg.split('\n')
         dst_msg_lines = dst_msg.split('\n')
-        src_msg_lines = map(string.strip, src_msg_lines)
-        dst_msg_lines = map(string.strip, dst_msg_lines)
+        src_msg_lines = list(map(str.strip, src_msg_lines))
+        dst_msg_lines = list(map(str.strip, dst_msg_lines))
         # remove empty lines
-        src_msg_lines = filter(None, src_msg_lines)
-        dst_msg_lines = filter(None, dst_msg_lines)
+        src_msg_lines = [_f for _f in src_msg_lines if _f]
+        dst_msg_lines = [_f for _f in dst_msg_lines if _f]
 
         if not set(src_msg_lines).issubset(set(dst_msg_lines)):
             logger.error('src message: %s' % src_msg_lines)
             logger.error('dst message: %s' % dst_msg_lines)
             raise BuildTestException('commit message not correctly replicated')
 
-        #pprint(src_file_hash)
-        #pprint(dst_file_hash)
+        # pprint(src_file_hash)
+        # pprint(dst_file_hash)
         if src_file_hash != dst_file_hash:
-            for src_f, src_v in src_file_hash.items():
+            for src_f, src_v in list(src_file_hash.items()):
                 dst_f = src_f
                 dst_v = dst_file_hash.get(src_f)
                 if src_v != dst_v:
@@ -177,6 +183,7 @@ def verify_changes(src_p4d, dst_svn, src_root, dst_root, svn_project_subdir,
                     logger.error('%s : %s' % (src_f, src_v))
                     logger.error('%s : %s' % (dst_f, dst_v))
             raise BuildTestException('replication failed')
+
 
 def verify_replication(src_mapping, dst_mapping,
                        src_docker_cli, dst_docker_cli,
@@ -197,8 +204,8 @@ def verify_replication(src_mapping, dst_mapping,
     source_last_changeset = kwargs.get('source_last_changeset', 0)
 
     p4_user = BUILD_TEST_P4D_USER
-    svn_user = 'guest'
-    svn_pass = 'guest'
+    svn_user = ''
+    svn_pass = ''
     src_ip = src_docker_cli.get_container_ip_addr()
     dst_ip = dst_docker_cli.get_container_ip_addr()
     svn_dir = dst_mapping[0][0]
@@ -217,7 +224,7 @@ def verify_replication(src_mapping, dst_mapping,
         svn_project_subdir = svn_dir[len(svn_project_dir):]
     dst_svn.checkout_working_copy(svn_project_dir, 0, depth='infinity')
 
-    src_ws_mapping = map(P4Server.WorkspaceMapping._make, src_mapping)
+    src_ws_mapping = list(map(P4Server.WorkspaceMapping._make, src_mapping))
     src_p4d.create_workspace(src_ws_mapping, ws_root=src_root)
 
     src_start_change = src_counter
@@ -240,13 +247,19 @@ def verify_replication(src_mapping, dst_mapping,
 
         if source_last_changeset:
             idx = src_changes.index(str(source_last_changeset))
-            src_changes = src_changes[:idx+1]
+            src_changes = src_changes[:idx + 1]
 
         dst_changes = dst_changes[-len(src_changes):]
         #print('src->dst : %s' % pformat(zip(src_changes, dst_changes)))
 
-        verify_changes(src_p4d, dst_svn, src_root, dst_root, svn_project_subdir,
-                       src_changes, dst_changes)
+        verify_changes(
+            src_p4d,
+            dst_svn,
+            src_root,
+            dst_root,
+            svn_project_subdir,
+            src_changes,
+            dst_changes)
     finally:
         logger.info('src root: %s' % src_root)
         logger.info('dst root: %s' % dst_root)

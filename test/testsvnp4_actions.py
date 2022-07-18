@@ -1,17 +1,18 @@
-#!/usr/bin/env python
+#!/usr/bin/python3
 # -*- coding: utf-8 -*-
 
 '''test replication of depots in svn repository.
 '''
 
 import os
+import locale
 import unittest
-import tempfile
+import lib.localestring as liblocale
+
 
 from testcommon import (obliterate_all_depots,
-                        BuildTestException,
-                        get_p4d_from_docker,
-                        set_p4d_unicode_mode,)
+                        set_p4d_unicode_mode,
+                        get_p4d_from_docker)
 from lib.buildcommon import (generate_random_str)
 from replicationunittest import ReplicationTestCaseWithDocker
 
@@ -19,8 +20,7 @@ from testcommon_svnp4 import (replicate_SvnP4Replicate,
                               verify_replication,
                               get_svn_rev_list,
                               get_svn_from_docker,
-                              svn_test_action_actions,
-                              create_ws_mapping_file,)
+                              svn_test_action_actions,)
 
 from lib.buildlogger import getLogger
 logger = getLogger(__name__)
@@ -30,7 +30,7 @@ class SvnBasicActionRepTest(ReplicationTestCaseWithDocker):
     def setUp(self):
         '''Obliterate all p4 depots due to file number limit of trial license
         '''
-        dst_docker_cli=self.docker_p4d_clients['p4d_0']
+        dst_docker_cli = self.docker_p4d_clients['p4d_0']
         obliterate_all_depots(dst_docker_cli)
 
     def svn_test_action_add(self, docker_cli, depot_dir):
@@ -57,14 +57,13 @@ class SvnBasicActionRepTest(ReplicationTestCaseWithDocker):
                 f.write(action)
             svn.run_add(testdir)
             svn.run_checkin(testdir, '%s' % action)
-
             # set external
             for external_cfg in external_cfgs:
                 svn.run_update(testdir)
                 if not external_cfg:
-                    svn.propdel('svn:externals', testdir)
+                    svn.client.propdel('svn:externals', testdir)
                 else:
-                    svn.propset('svn:externals', external_cfg, testdir)
+                    svn.client.propset('svn:externals', external_cfg, testdir)
                 svn.run_checkin(testdir, 'added external %s' % external_cfg)
 
                 action = 'editing %s\n' % testfile
@@ -74,7 +73,7 @@ class SvnBasicActionRepTest(ReplicationTestCaseWithDocker):
 
             # delete external
             svn.run_update(testdir)
-            svn.propdel('svn:externals', testdir)
+            svn.client.propdel('svn:externals', testdir)
             svn.run_checkin(testdir, 'del external')
 
             action = 'editing %s\n' % testfile
@@ -82,7 +81,11 @@ class SvnBasicActionRepTest(ReplicationTestCaseWithDocker):
                 f.write(action)
             svn.run_checkin(testfile, '%s' % action)
 
-    def svn_test_externals_special1(self, docker_cli, depot_dir, external_cfgs):
+    def svn_test_externals_special1(
+            self,
+            docker_cli,
+            depot_dir,
+            external_cfgs):
         '''this function generates a test directory with interleaving
         externals and files
         '''
@@ -118,9 +121,9 @@ class SvnBasicActionRepTest(ReplicationTestCaseWithDocker):
 
                 svn.run_update(testdir)
                 if not external_cfg:
-                    svn.propdel('svn:externals', testdir)
+                    svn.client.propdel('svn:externals', testdir)
                 else:
-                    svn.propset('svn:externals', external_cfg, testdir)
+                    svn.client.propset('svn:externals', external_cfg, testdir)
                 svn.run_checkin(testdir, 'added external %s' % external_cfg)
 
                 action = 'editing %s\n' % testfile
@@ -128,10 +131,9 @@ class SvnBasicActionRepTest(ReplicationTestCaseWithDocker):
                     f.write(action)
                 svn.run_checkin(testfile, '%s' % action)
 
-
             # delete external
             svn.run_update(testdir)
-            svn.propdel('svn:externals', testdir)
+            svn.client.propdel('svn:externals', testdir)
             svn.run_checkin(testdir, 'del external')
 
             action = 'editing %s\n' % testfile
@@ -204,7 +206,8 @@ class SvnBasicActionRepTest(ReplicationTestCaseWithDocker):
 
         src_svn = self.docker_svn_clients['svn_0']
         with get_svn_from_docker(docker_cli) as (svn, svn_root):
-            bigtop_repos = os.path.join(svn_root, 'bigtop/branches/hadoop-0.23')
+            bigtop_repos = os.path.join(
+                svn_root, 'bigtop/branches/hadoop-0.23')
             svn.run_update(bigtop_repos, update_arg='--set-depth infinity')
 
             testdir = os.path.join(bigtop_repos, 'docs')
@@ -215,7 +218,7 @@ class SvnBasicActionRepTest(ReplicationTestCaseWithDocker):
     def svn_test_externals_9(self, docker_cli, depot_dir):
         external_cfg = '../bigtop/branches/hadoop-0.23/bigtop-deploy bigtop-deploy'
 
-        src_svn = self.docker_svn_clients['svn_0']
+ #       src_svn = self.docker_svn_clients['svn_0']
         with get_svn_from_docker(docker_cli) as (svn, svn_root):
             testdir = os.path.join(svn_root, depot_dir[1:])
             testfile = os.path.join(testdir, 'repo_test_file')
@@ -225,7 +228,7 @@ class SvnBasicActionRepTest(ReplicationTestCaseWithDocker):
             with open(testfile, 'wt') as f:
                 f.write(action)
             svn.run_add(testdir)
-            svn.propset('svn:externals', external_cfg, testdir)
+            svn.client.propset('svn:externals', external_cfg, testdir)
             svn.run_checkin(testdir, '%s' % action)
 
             action = 'editing %s\n' % testfile
@@ -233,7 +236,8 @@ class SvnBasicActionRepTest(ReplicationTestCaseWithDocker):
                 f.write(action)
             svn.run_checkin(testfile, '%s' % action)
 
-            bigtop_repos = os.path.join(svn_root, 'bigtop/branches/hadoop-0.23')
+            bigtop_repos = os.path.join(
+                svn_root, 'bigtop/branches/hadoop-0.23')
             svn.run_update(bigtop_repos, update_arg='--set-depth infinity')
 
             testdir = os.path.join(bigtop_repos, 'bigtop-deploy')
@@ -251,10 +255,9 @@ class SvnBasicActionRepTest(ReplicationTestCaseWithDocker):
             testdir = os.path.join(svn_root, depot_dir[1:])
             os.mkdir(testdir)
 
-            import locale
             sys_locale = locale.getdefaultlocale()
-            filename = u'следовательносуществую.txt'
-            filename = filename.encode(sys_locale[1])
+            filename = 'следовательносуществую.txt'
+#            filename = filename.encode(sys_locale[1])
             filename = os.path.join(testdir, filename)
             with open(filename, 'w') as f:
                 f.write(filename)
@@ -263,13 +266,12 @@ class SvnBasicActionRepTest(ReplicationTestCaseWithDocker):
             p = Popen('svn add %s' % testdir, stdout=PIPE,
                       stderr=PIPE, shell=True)
             out, err = p.communicate()
-            logger.info('%s, %s' % (out, err))
+            logger.info('%s, %s', out, err)
 
             p = Popen('svn commit -m russianfilename', stdout=PIPE,
                       stderr=PIPE, shell=True)
             out, err = p.communicate()
-            logger.info('%s, %s' % (out, err))
-
+            logger.info('%s, %s', out, err)
 
     def svn_test_action_edit(self, docker_cli, depot_dir):
         with get_svn_from_docker(docker_cli) as (svn, svn_root):
@@ -289,7 +291,7 @@ class SvnBasicActionRepTest(ReplicationTestCaseWithDocker):
             svn.run_checkin(testfile, '%s' % action)
 
     def svn_test_setup_src_branch(self, docker_cli, depot_dir,
-                                   edits_in_other_folder_before_copy=False):
+                                  edits_in_other_folder_before_copy=False):
         with get_svn_from_docker(docker_cli) as (svn, svn_root):
             test_dir = os.path.join(svn_root, depot_dir[1:])
             trunk_dir = os.path.join(test_dir, 'trunk')
@@ -357,7 +359,7 @@ class SvnBasicActionRepTest(ReplicationTestCaseWithDocker):
             encoding, act_str_orig = commit_msg
             act_str = act_str_orig[:]
             with open(testfile, 'a') as f:
-                f.write(act_str.encode(encoding))
+                f.write(act_str)
             cmd = "-m '%s'" % act_str
             svn._run('commit', cmd)
 
@@ -372,7 +374,8 @@ class SvnBasicActionRepTest(ReplicationTestCaseWithDocker):
             svn.run_cmd_with_args('commit', cmd)
             '''
 
-    def svn_test_action_symbol_in_commitmsg(self, docker_cli, depot_dir, commit_msg):
+    def svn_test_action_symbol_in_commitmsg(
+            self, docker_cli, depot_dir, commit_msg):
         with get_svn_from_docker(docker_cli) as (svn, svn_root):
             testdir = os.path.join(svn_root, depot_dir[1:])
             testfile = os.path.join(testdir, 'repo_test_file')
@@ -408,7 +411,6 @@ class SvnBasicActionRepTest(ReplicationTestCaseWithDocker):
             action = 'delete %s' % testfile
             svn.run_remove(testfile)
             svn.run_checkin(testfile, action)
-
 
     def svn_test_add_empty_dir(self, docker_cli, project_dir):
         with get_svn_from_docker(docker_cli) as (svn, svn_root):
@@ -470,7 +472,7 @@ class SvnBasicActionRepTest(ReplicationTestCaseWithDocker):
         verify_replication(src_mapping, dst_mapping,
                            src_docker_cli, dst_docker_cli, **kwargs)
 
-        if group_num == None:
+        if group_num is None:
             return dst_depot
 
         obliterate_all_depots(dst_docker_cli)
@@ -480,10 +482,14 @@ class SvnBasicActionRepTest(ReplicationTestCaseWithDocker):
         svn_revs.insert(0, 0)
 
         for src_counter in svn_revs[::num_replicate]:
-            replicate_SvnP4Replicate(src_mapping, dst_mapping,
-                                     src_docker_cli, dst_docker_cli,
-                                     src_counter=0,
-                                     replicate_change_num=num_replicate, **kwargs)
+            replicate_SvnP4Replicate(
+                src_mapping,
+                dst_mapping,
+                src_docker_cli,
+                dst_docker_cli,
+                src_counter=0,
+                replicate_change_num=num_replicate,
+                **kwargs)
 
             verify_replication(src_mapping, dst_mapping,
                                src_docker_cli, dst_docker_cli,
@@ -534,19 +540,22 @@ class SvnBasicActionRepTest(ReplicationTestCaseWithDocker):
                                    self.svn_test_externals_9)
 
     def test_svn_action_rep_externals_interleaving_externals_and_other_1(self):
-        self.svn_action_rep_action('svn_externals_interleaving_externals_and_other_1',
-                                   self.svn_test_externals_10,
-                                   group_num=1)
+        self.svn_action_rep_action(
+            'svn_externals_interleaving_externals_and_other_1',
+            self.svn_test_externals_10,
+            group_num=1)
 
     def test_svn_action_rep_externals_interleaving_externals_and_other_2(self):
-        self.svn_action_rep_action('svn_externals_interleaving_externals_and_other_2',
-                                   self.svn_test_externals_10,
-                                   group_num=2)
+        self.svn_action_rep_action(
+            'svn_externals_interleaving_externals_and_other_2',
+            self.svn_test_externals_10,
+            group_num=2)
 
     def test_svn_action_rep_externals_interleaving_externals_and_other_3(self):
-        self.svn_action_rep_action('svn_externals_interleaving_externals_and_other_3',
-                                   self.svn_test_externals_10,
-                                   group_num=3)
+        self.svn_action_rep_action(
+            'svn_externals_interleaving_externals_and_other_3',
+            self.svn_test_externals_10,
+            group_num=3)
 
     def test_svn_action_rep_externals_ignore_externals(self):
         self.svn_action_rep_action('svn_externals_ignore_externals',
@@ -584,14 +593,19 @@ class SvnBasicActionRepTest(ReplicationTestCaseWithDocker):
                                    actions=['delete_dir'])
 
     def test_svn_action_rep_delete_file_add(self):
-        self.svn_action_rep_action('delete_file_add',
-                                   svn_test_action_actions,
-                                   actions=['edit', 'rename', 'delete_file', 'add_exec'])
+        self.svn_action_rep_action(
+            'delete_file_add',
+            svn_test_action_actions,
+            actions=[
+                'edit',
+                'rename',
+                'delete_file',
+                'add_exec'])
 
     def test_svn_action_rep_rename(self):
-        self.svn_action_rep_action('rename',
-                                   svn_test_action_actions,
-                                   actions=['edit', 'edit', 'rename','rename'])
+        self.svn_action_rep_action(
+            'rename', svn_test_action_actions, actions=[
+                'edit', 'edit', 'rename', 'rename'])
 
     def test_svn_adding_rep_empty_dir(self):
         self.svn_action_rep_action('empty_dir',
@@ -650,64 +664,73 @@ class SvnBasicActionRepTest(ReplicationTestCaseWithDocker):
                                    actions=['copy_prev'])
 
     def test_svn_action_rep_symlink_rel(self):
-        self.svn_action_rep_action('symlink_rel',
-                                   svn_test_action_actions,
-                                   actions=['edit', 'rename', 'symlink_rel', 'edit'])
+        self.svn_action_rep_action(
+            'symlink_rel', svn_test_action_actions, actions=[
+                'edit', 'rename', 'symlink_rel', 'edit'])
 
     def test_svn_action_rep_symlink_abs(self):
-        self.svn_action_rep_action('symlink_abs',
-                                   svn_test_action_actions,
-                                   actions=['edit', 'rename', 'symlink_abs', 'edit'])
+        self.svn_action_rep_action(
+            'symlink_abs', svn_test_action_actions, actions=[
+                'edit', 'rename', 'symlink_abs', 'edit'])
 
     def test_svn_action_rep_changing_symlink_g2(self):
         self.svn_action_rep_action('changing_symlink_g2',
                                    svn_test_action_actions,
-                                   actions=['edit', 'changing_symlink',],
+                                   actions=['edit', 'changing_symlink', ],
                                    group_num=2)
 
     def test_svn_action_rep_changing_symlink_g3(self):
         self.svn_action_rep_action('changing_symlink_g3',
                                    svn_test_action_actions,
-                                   actions=['edit', 'changing_symlink',],
+                                   actions=['edit', 'changing_symlink', ],
                                    group_num=3)
 
     def test_svn_action_rep_special_file_name(self):
-        special_names = {'specialcharacter':u'a_file_with_%_*_#_@_in_its_name.txt',
-                         'space_in_name':u'file_with_space _in_its_name.txt',
-                         'russian_filename':u'следовательносуществую.txt',}
-        for case, name in special_names.items():
-            import locale
-            _, locale_encoding = locale.getlocale()
-            name = name.encode(locale_encoding)
-            self.svn_action_rep_action(case,
-                                       svn_test_action_actions,
-                                       actions=['edit', 'rename', 'delete_dir'],
-                                       special_filename=name)
+        special_names = {
+            'specialcharacter': 'a_file_with_%_*_#_@_in_its_name.txt',
+            'space_in_name': 'file_with_space _in_its_name.txt',
+            'single_quote_in_name': "file_with_space'_in_its_name.txt",
+            'russian_filename': 'следовательносуществую.txt',
+        }
+        for case, name in list(special_names.items()):
+            # import locale
+            # _, locale_encoding = locale.getlocale()
+            # name = name.encode(locale_encoding)
+            self.svn_action_rep_action(
+                case, svn_test_action_actions, actions=[
+                    'edit', 'rename', 'delete_dir'], special_filename=name)
 
     def test_svn_action_rep_special_file_name_unicodeserver(self):
-        special_names = {'specialcharacter':u'a_file_with_%_*_#_@_in_its_name.txt',
-                         'space_in_name':u'file_with_space _in_its_name.txt',
-                         'russian_filename':u'следовательносуществую.txt',}
+        special_names = {
+            'specialcharacter': 'a_file_with_%_*_#_@_in_its_name.txt',
+            'space_in_name': 'file_with_space _in_its_name.txt',
+            'russian_filename': 'следовательносуществую.txt',
+        }
         dst_docker_cli = self.docker_p4d_clients['unicode-server']
         set_p4d_unicode_mode(dst_docker_cli)
-        for case, name in special_names.items():
-            import locale
-            _, locale_encoding = locale.getlocale()
-            name = name.encode(locale_encoding)
-            self.svn_action_rep_action(case+'_unicodeserver',
-                                       svn_test_action_actions,
-                                       actions=['edit', 'rename', 'delete_dir'],
-                                       special_filename=name,
-                                       dst_docker_cli=dst_docker_cli)
+        for case, name in list(special_names.items()):
+            # import locale
+            # _, locale_encoding = locale.getlocale()
+            # name = name.encode(locale_encoding)
+            self.svn_action_rep_action(
+                case + '_unicodeserver',
+                svn_test_action_actions,
+                actions=[
+                    'edit',
+                    'rename',
+                    'delete_dir'],
+                special_filename=name,
+                dst_docker_cli=dst_docker_cli)
 
     def test_svn_action_rep_special_dir_name(self):
-        special_names = {'specialcharacterdir':'a_file_with_%_*_#_@_in_its_name.txt',
-                         'space_in_dirname':'file_with_space _in_its_name.txt',}
-        for case, name in special_names.items():
-            self.svn_action_rep_action(case,
-                                       svn_test_action_actions,
-                                       actions=['edit', 'rename', 'delete_dir'],
-                                       special_dirname=name)
+        special_names = {
+            'specialcharacterdir': 'a_file_with_%_*_#_@_in_its_name.txt',
+            'space_in_dirname': 'file_with_space _in_its_name.txt',
+        }
+        for case, name in list(special_names.items()):
+            self.svn_action_rep_action(
+                case, svn_test_action_actions, actions=[
+                    'edit', 'rename', 'delete_dir'], special_dirname=name)
 
     def test_svn_action_rep_trunk_with_branch(self):
         actions = ['edit', 'rename', 'delete_file', 'add_exec',
@@ -725,17 +748,17 @@ class SvnBasicActionRepTest(ReplicationTestCaseWithDocker):
                                    replicate_only_branch_dir=True)
 
     def gen_special_commitmsgs(self):
-        commit_msgs = {'utf-8':u'I think, therefore I am.',
-                       'cp1251':u'мыслю, следовательно существую.',}
-        import lib.localestring as liblocale
+        commit_msgs = {'utf-8': 'I think, therefore I am.',
+                       'cp1251': 'мыслю, следовательно существую.', }
+
         if liblocale.locale_encoding == "UTF-8":
-            commit_msgs.update({'gb2312':u'我思故我在.',
-                                'latin1':u'La Santé'})
+            commit_msgs.update({'gb2312': '我思故我在.',
+                                'latin1': 'La Santé'})
         return commit_msgs
 
     def test_svn_action_rep_special_commitmsgs(self):
         commitmsgs = self.gen_special_commitmsgs()
-        for encoding, msg in commitmsgs.items():
+        for encoding, msg in list(commitmsgs.items()):
             self.svn_action_rep_action(encoding,
                                        self.svn_test_action_commitmsg,
                                        commit_msg=[encoding, msg])
@@ -745,7 +768,7 @@ class SvnBasicActionRepTest(ReplicationTestCaseWithDocker):
         dst_docker_cli = self.docker_p4d_clients['unicode-server']
         set_p4d_unicode_mode(dst_docker_cli)
 
-        for encoding, msg in commitmsgs.items():
+        for encoding, msg in list(commitmsgs.items()):
             self.svn_action_rep_action(encoding+'_unicodeserver',
                                        self.svn_test_action_commitmsg,
                                        commit_msg=[encoding, msg],
@@ -761,7 +784,7 @@ class SvnBasicActionRepTest(ReplicationTestCaseWithDocker):
 
         dst_depot = self.svn_action_rep_action('remove_review_commitmsg',
                                                self.svn_test_action_commitmsg,
-                                               commit_msg=['utf-8', orig_desc])
+    commit_msg=['utf-8', orig_desc])
 
         dst_docker_cli = self.docker_p4d_clients['p4d_0']
         dst_dir = dst_depot[1:-4]
@@ -774,28 +797,28 @@ class SvnBasicActionRepTest(ReplicationTestCaseWithDocker):
         obliterate_all_depots(dst_docker_cli)
 
     def test_svn_action_rep_symbols_in_commitmsgs(self):
-        commitmsgs  = [u'"a " b "',
-                       u"'a ' b '",
-                       u" aaa b ec \\\\",
-                       u" aaa b ec \\",
-                       u"let's `ls -al` \\",
-                       u"hello world` a",
-                       u"hell world",
-                       u"aaa `ls -l`",
-                       u"# ls ",
-                       u"'''",
-                       u"''",
-                       u'"""',
-                       u'""',
-                       u'|',
-                       u'echo $HOME',
-                       u'echo $$HOME',
-                       u'echo \$HOME',
-                       u'echo #!/usr/bin/ls -al',
-                       u'`#!/usr/bin/bash ls`',
-                       u'`#!/usr/bin/sh history`',
-                       u'*',
-                       u'(a=hello; echo $a)',
+        commitmsgs  = ['"a " b "',
+                       "'a ' b '",
+                       " aaa b ec \\\\",
+                       " aaa b ec \\",
+                       "let's `ls -al` \\",
+                       "hello world` a",
+                       "hell world",
+                       "aaa `ls -l`",
+                       "# ls ",
+                       "'''",
+                       "''",
+                       '"""',
+                       '""',
+                       '|',
+                       'echo $HOME',
+                       'echo $$HOME',
+                       'echo \$HOME',
+                       'echo #!/usr/bin/ls -al',
+                       '`#!/usr/bin/bash ls`',
+                       '`#!/usr/bin/sh history`',
+                       '*',
+                       '(a=hello; echo $a)',
         ]
 
         for idx, msg in enumerate(commitmsgs):
@@ -810,12 +833,6 @@ class SvnBasicActionRepTest(ReplicationTestCaseWithDocker):
 
     def test_svn_action_rep_branch_detection(self):
         '''test svn->p4 branch point detection script'''
-        try:
-            from SvnP4BranchDetection import detect_branch_point
-        except:
-            logger.info('No SvnP4BranchDetection found, skipeed')
-            return
-
         action = 'branch_detection'
         src_docker_cli = self.docker_svn_clients['svn_bd']
         result = self.svn_action_rep_branch_detection(action, src_docker_cli,
@@ -828,12 +845,6 @@ class SvnBasicActionRepTest(ReplicationTestCaseWithDocker):
 
     def test_svn_action_rep_branch_detection_extra_rev(self):
         '''test svn->p4 branch point detection script'''
-        try:
-            from SvnP4BranchDetection import detect_branch_point
-        except:
-            logger.info('No SvnP4BranchDetection found, skipeed')
-            return
-
         action = 'branch_detection_rev'
         src_docker_cli = self.docker_svn_clients['svn_bd_rev']
         result = self.svn_action_rep_branch_detection(action, src_docker_cli,
@@ -878,6 +889,7 @@ class SvnBasicActionRepTest(ReplicationTestCaseWithDocker):
         args.source_project_dir = branch_src
 
         # detect svn branch point
+        from SvnP4BranchDetection import detect_branch_point
         branch_from = detect_branch_point(args)
         return branch_from
 

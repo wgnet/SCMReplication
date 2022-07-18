@@ -6,15 +6,18 @@ future.
 '''
 
 import os
+import time
 import argparse
 from socket import gethostname
 from collections import namedtuple
 
 import P4
-from buildlogger import getLogger
-from buildcommon import generate_random_str
+from .buildlogger import getLogger
+from .buildcommon import generate_random_str
 
 srv_account_passwd = dict()
+
+
 class P4Server(P4.P4):
     '''P4 wrapper with methods to create/delete temporary workspace.
     '''
@@ -23,7 +26,7 @@ class P4Server(P4.P4):
                                   ['depot_dir', 'rel_dir'])
 
     def __init__(self, port, user=None, password=None, login=True,
-                 log_level='WARNING', **kwargs):
+                 log_level='INFO', **kwargs):
         user = user if user else generate_random_str()
         password = password if password else generate_random_str()
 
@@ -39,12 +42,13 @@ class P4Server(P4.P4):
         logger = getLogger('p4server-' + port)
         self.logger = logger
         self.logger.setLevel(log_level)
-
+        time.sleep(5)
         if login:
-            self.connect()
+            #            self.connect()
+            #            self.logger.info('P4Server connect works')
             self.try_login()
 
-        self.logger.debug('P4Server created successfully')
+        self.logger.info('P4Server created successfully')
 
     def __del__(self):
         if self.connected():
@@ -53,12 +57,13 @@ class P4Server(P4.P4):
         super(P4Server, self).__del__()
 
     def try_login(self):
-        from localestring import locale_encoding
-        locale_to_p4charset = {'cp1251':'cp1251',
-                               'utf-8':'utf8',}
+        from .localestring import locale_encoding
+        locale_to_p4charset = {'cp1251': 'cp1251',
+                               'utf-8': 'utf8', }
         try:
+            self.connect()
             self.run_login()
-        except Exception, e:
+        except Exception as e:
             if 'Unicode server permits only unicode enabled clients' in str(e):
                 self.charset = locale_to_p4charset[locale_encoding.lower()]
                 self.run_login()
@@ -86,14 +91,17 @@ class P4Server(P4.P4):
             unique_id = generate_random_str(10)
 
         # ws_mapping should be list of instance of WorkspaceMapping
-        is_ws_map = lambda inst: isinstance(inst, P4Server.WorkspaceMapping)
+        def is_ws_map(inst):
+            return isinstance(inst, P4Server.WorkspaceMapping)
         if not all(map(is_ws_map, ws_mapping)):
             raise Exception('Invalid workspace mapping format %s' % ws_mapping)
 
         # right-hand side of tuple should be path relative to ws_root
-        is_rel_path = lambda inst: inst.rel_dir.startswith('./')
+        def is_rel_path(inst):
+            return inst.rel_dir.startswith('./')
         if not all(map(is_rel_path, ws_mapping)):
-            raise Exception('right-hand map should be relative path to ws root')
+            raise Exception(
+                'right-hand map should be relative path to ws root')
 
         ws_name = '%s_%s_replication-script_%s' % (self.user,
                                                    gethostname(),
@@ -117,11 +125,14 @@ class P4Server(P4.P4):
             ws_spec['Stream'] = stream
             del ws_spec['View']
 
-        ws_spec = '\n'.join('%s: %s' % (k, v) for k, v in ws_spec.items())
-
+        ws_spec = '\n'.join(
+            '%s: %s' %
+            (k, v) for k, v in list(
+                ws_spec.items()))
+        self.logger.info('Spec is %s', ws_spec)
         self.input = ws_spec
         self.run_client('-i')
-        self.logger.info('Created new workspace: %s' % ws_spec)
+        self.logger.info('Created new workspace: %s', ws_spec)
 
         self.cwd = ws_root
         self.client = ws_name
@@ -129,7 +140,7 @@ class P4Server(P4.P4):
         if stream:
             try:
                 self.run_switch(stream)
-            except:
+            except BaseException:
                 pass
 
         return ws_name
@@ -146,7 +157,7 @@ class P4Server(P4.P4):
         ws_name = self.client
         try:
             self.delete_client(ws_name)
-        except P4.P4Exception, e:
+        except P4.P4Exception as e:
             exc_msg = str(e)
 
             if 'Connection reset by peer' in exc_msg:
@@ -167,7 +178,7 @@ class P4Server(P4.P4):
 
     def get_depot_path_map(self, root=None):
         '''get depot -> abs path mapping of current client in p4
-    
+
         @return instance of P4.Map, from depot to abs path
         '''
         ws_spec = self.fetch_client(self.client)

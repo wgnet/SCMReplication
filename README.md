@@ -1,31 +1,7 @@
-<div id="table-of-contents">
-<h2>Table of Contents</h2>
-<div id="text-table-of-contents">
-<ul>
-<li><a href="#orga9d4f72">1. Synopsis</a></li>
-<li><a href="#org031b282">2. Examples</a></li>
-<li><a href="#org5c67076">3. Installation</a></li>
-<li><a href="#orgc17d1da">4. Tests</a>
-<ul>
-<li><a href="#orgfdb6181">4.1. Tests are available in ./test directory.</a></li>
-<li><a href="#orgbd9c33c">4.2. Docker containers are used for testing.</a></li>
-<li><a href="#orgd8fbf37">4.3. run tests</a></li>
-</ul>
-</li>
-<li><a href="#org28b1388">5. License</a></li>
-</ul>
-</div>
-</div>
-
-
-<a id="orga9d4f72"></a>
-
 # Synopsis
 
-This set of scripts was developed to continuously replicate changes
-between Perforce and Subversion servers. It is released under the BSD license.
-Perforce to Perforce replication scripts were based on the code written by
-Sven Erik Knop.
+This set of scripts is developed to continuously replicate changes
+between p4 and svn servers.
 
 Features:
 
@@ -42,109 +18,173 @@ Features:
 -   svn externals supported
 
 
-<a id="org031b282"></a>
+
+# Preparation
+
+The replication scripts run in docker containers. They should be able to 
+work on all Linux distros, provided docker being installed properly.
+
+## Docker containers are used for testing.
+Install docker by following instructions in https://docs.docker.com/install/linux/docker-ce/centos/
+ 
+## build source replication docker image
+    ```bash
+    # this script builds docker image "c7_source_replication:latest" on your machine
+    ./build_docker.sh
+    
+    docker images | grep c7_source_replication || echo "failed"
+    ```
 
 # Examples
+SVN-P4 rep Example
 
-Configuration/command examples can be found in the directory:
-
-	./cfg
-
-<a id="org5c67076"></a>
-
-# Installation
-
-The scripts are tested in Centos 7. They should be able to work with
-all Linux distros, provided libs/python modules being installed
-properly.
-
-To setup environment in Centos 7:
-
-    sudo ./setupenv.sh
-    source buildvenv/bin/activate
-
-
-<a id="orgc17d1da"></a>
+    ```bash
+    test -n "${BWREPL_SOURCE_SVNDIR}" 
+    test -n "${BWREPL_DEST_P4DEPOT}"
+    test -n "${BWREPL_SOURCE_SVNSERVER}"
+    test -n "${BWREPL_DEST_P4SERVER}"
+    
+    test -n "${SCMREP_SOURCE_USER}"
+    test -n "${SCMREP_SOURCE_PASS}"
+    test -n "${SCMREP_TARGET_USER}"
+    test -n "${SCMREP_TARGET_PASS}"
+    
+    
+    SOURCE_COUNTER=${SOURCE_COUNTER:-0}
+    
+    WORKSPACE=./workspace
+    export TMPDIR=${WORKSPACE}/svn_tmp
+    mkdir -p ${WORKSPACE}
+    mkdir -p ${TMPDIR}
+    
+    # create source/destination view mapping config files
+    SRC_VIEWMAP_CFG="${WORKSPACE}/source_svn_dir.cfg"
+    DST_VIEWMAP_CFG="${WORKSPACE}/target_p4_mapping.cfg"
+    echo "${BWREPL_SOURCE_SVNDIR}" > ${SRC_VIEWMAP_CFG}
+    echo "${BWREPL_DEST_P4DEPOT} ./..." > ${DST_VIEWMAP_CFG}
+    
+    # workspace root directory for replication
+    WS_ROOT="${WORKSPACE}/replication_rootdir"
+    rm -rf ${WS_ROOT}
+    mkdir -p ${WS_ROOT}
+    
+    # Go Go Go
+    # use -m to specify a maximum number of change to replicate
+    cmd="${PWD}/SvnP4Replicate.py \
+        --source-port $BWREPL_SOURCE_SVNSERVER \
+        --target-port $BWREPL_DEST_P4SERVER \
+        --source-replicate-dir-cfgfile ${SRC_VIEWMAP_CFG} \
+        --target-workspace-view-cfgfile ${DST_VIEWMAP_CFG} \
+        -r ${WS_ROOT} \
+        --source-counter ${SOURCE_COUNTER} \
+        --svn-ignore-externals \
+        --verbose INFO \
+        -m 512"
+    
+    echo ${cmd}
+    
+    temp_env_file=$(mktemp)
+    function remove_tmp_env_file() {
+    	rm -f ${temp_env_file}
+    }
+    trap remove_tmp_env_file EXIT
+    
+    cat >$temp_env_file <<EOF
+    SCMREP_SOURCE_USER=${SCMREP_SOURCE_USER}
+    SCMREP_SOURCE_PASS=${SCMREP_SOURCE_PASS}
+    SCMREP_TARGET_USER=${SCMREP_TARGET_USER}
+    SCMREP_TARGET_PASS=${SCMREP_TARGET_PASS}
+    LANG=en_US.UTF-8
+    TMPDIR=${TMPDIR}
+    EOF
+    
+    rep_docker_image=bw-docker-01.artifactory.bigworldtech.com/build/c7_source_replication
+    docker run --name ${JOB_NAME} --user $UID --rm --env-file ${temp_env_file} -v $WORKSPACE:$WORKSPACE ${rep_docker_image} $cmd
+    ```
 
 # Tests
 
+## Tests are available in ./test directory.
 
-<a id="orgfdb6181"></a>
+   
+- create the test server containers, it takes a while:
+    ```bash
+    # this script builds
+    #   buildtest_p4d_sampledepot, with perforce sample depot, and
+    #   buildtest_svn_sampledepot, with a mirror of <http://svn.apache.org/repos/asf/bigtop>
 
-## Tests location
+    ./setup_test_dockers.sh
 
-Tests are available in the following location:
+    docker images | grep buildtest_p4d_sampledepot || echo "failed"
+    docker images | grep buildtest_svn_sampledepot || echo "failed"
 
-    ./test
+    ```
 
-<a id="orgbd9c33c"></a>
+- test scripts require a docker volume precreated for configuration files
+  and temporary replication root
+  ```bash
+  docker volume create replication-test-vol
+  ```
 
-## Docker containers are used for testing.
+## run tests
 
--   create the test containers, it may take a while:
-    
-        sudo yum install -y docker
-        sudo systemctl start docker
-        cd test/dockerfiles
-        # "sudo" in case root permission is needed to build Dockerfiles, Or
-        # add user to docker group
-        #   # sudo groupadd docker
-        #   # sudo usermod -aG docker $USER
-        #   log out and in again
-        sudo ./setup_test_dockers.sh
+Tests run in docker containers.
 
--   New docker containers will be created:
-    -   buildtest\_p4d\_sampledepot with perforce sample depot, and
-    -   buildtest\_svn\_sampledepot with a mirror of <http://svn.apache.org/repos/asf/bigtop>
+- run all tests
 
+    ```bash
+    # it took 4729s to run 204 tests on my VM.
+    docker run -it --rm \
+               --env LANG=en_US.UTF-8 \
+               -v /var/run/docker.sock:/var/run/docker.sock \
+               -v replication-test-vol:/application/test/replication \
+               c7_source_replication \
+               python -m unittest discover -f
+    ```
 
-<a id="orgd8fbf37"></a>
-
-## Run tests
-
--   run all tests
-
-        # Make sure you are in ./test
-        # If you ran the docker containers setup script, you will need to do:
-        #   cd ..
-        python -m unittest discover -f
-        # Ran 204 tests in 4729.528s in my VM.
+- run a test module
+    ```bash
+    docker run -it --rm \
+               --env LANG=en_US.UTF-8 \
+               -v /var/run/docker.sock:/var/run/docker.sock \
+               -v replication-test-vol:/application/test/replication \
+               c7_source_replication \
+               python ./test/testsampledepot.py -f
+    ```
 
 -   p4p4 replication tests
-    -   testsampledepot\_ingroup.py
-    -   testsampledepot\_integratemissingchange.py
-    -   testsampledepot\_mapping.py
-    -   testsampledepot\_misc.py
-    -   testsampledepot\_obliterate.py
+    -   testsampledepot_ingroup.py
+    -   testsampledepot_integratemissingchange.py
+    -   testsampledepot_mapping.py
+    -   testsampledepot_misc.py
+    -   testsampledepot_obliterate.py
     -   testsampledepot.py
-    -   testsampledepot\_streams.py
-    -   testsampledepot\_unicodeserver.py
+    -   testsampledepot_streams.py
+    -   testsampledepot_unicodeserver.py
 
 -   svnp4 replication tests
-    -   testsvnp4\_actions.py
-    -   testsvnp4\_exclusion.py
-    -   testsvnp4\_wholedir.py
+    -   testsvnp4_actions.py
+    -   testsvnp4_exclusion.py
+    -   testsvnp4_wholedir.py
 
 -   p4svn replication tests
-    -   testp4svn\_actions.py
-    -   testp4svn\_samples.py
+    -   testp4svn_actions.py
+    -   testp4svn_samples.py
 
-
-<a id="org28b1388"></a>
 
 # License
 
-> Copyright (c) 2016, BigWorld Pty. Ltd.
-> 
+> Copyright (c) 2019, BigWorld Pty. Ltd.
+>
 > Redistribution and use in source and binary forms, with or without
 > modification, are permitted provided that the following conditions are met:
-> 
+>
 > 1.  Redistributions of source code must retain the above copyright notice, this
 >     list of conditions and the following disclaimer.
 > 2.  Redistributions in binary form must reproduce the above copyright notice,
 >     this list of conditions and the following disclaimer in the documentation
 >     and/or other materials provided with the distribution.
-> 
+>
 > THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
 > ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
 > WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
@@ -155,7 +195,7 @@ Tests are available in the following location:
 > ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 > (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 > SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-> 
+>
 > The views and conclusions contained in the software and documentation are those
 > of the authors and should not be interpreted as representing official policies,
 > either expressed or implied, of the FreeBSD Project.

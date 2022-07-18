@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/python3
 
 import json
 import traceback
@@ -8,15 +8,16 @@ import shutil
 from datetime import datetime, timedelta
 import re
 
-from buildcommon import generate_random_str
-from buildlogger import getLogger
+from .buildcommon import generate_random_str
+from .buildlogger import getLogger
 from P4 import P4Exception, P4
-from p4server import P4Server
+from .p4server import P4Server
 from pprint import pprint, pformat
 
 
 logger = getLogger(__name__)
 p4_srv_utc_offset = None
+
 
 class P4RBGError(Exception):
     pass
@@ -33,13 +34,13 @@ def create_branch_view(p4, source_depot_dir, target_depot_dir):
     branch_name = 'RBG_branch_view' + generate_random_str()
     branch_mapping = '%s %s' % (source_depot_dir, target_depot_dir)
     branch_spec = {'Branch': branch_name,
-                   'Description':'branch for release branch generation',
+                   'Description': 'branch for release branch generation',
                    'Owner': p4.user,
                    'Options': 'unlocked',
                    'View': branch_mapping}
 
     branch_spec = '\n'.join('%s: %s' % (k, v)
-                            for k, v in branch_spec.items())
+                            for k, v in list(branch_spec.items()))
 
     p4.input = branch_spec
     p4.run_branch('-i')
@@ -55,6 +56,7 @@ def delete_branch_view(p4, branch_view):
     '''
     p4.delete_branch(branch_view)
     return None
+
 
 def delete_p4_workspace(p4):
     '''Delete perforce workspace
@@ -86,7 +88,8 @@ def create_p4_workspace(p4_port, p4_user, p4_passwd, depot_dir, verbose):
     p4 = P4Server(p4_port, p4_user, p4_passwd)
 
     # read mapping from config file
-    ws_mapping = map(P4Server.WorkspaceMapping._make, [(depot_dir, './...')])
+    ws_mapping = list(
+        map(P4Server.WorkspaceMapping._make, [(depot_dir, './...')]))
 
     # create workspace
     ws_name = p4.create_workspace(ws_mapping, ws_root)
@@ -97,7 +100,11 @@ def create_p4_workspace(p4_port, p4_user, p4_passwd, depot_dir, verbose):
     return p4, ws_root
 
 
-def submit_opened_files(p4, from_branch, src_rev, replicate_user_and_timestamp):
+def submit_opened_files(
+        p4,
+        from_branch,
+        src_rev,
+        replicate_user_and_timestamp):
     '''run submit if any file opened
 
     description would be modified to indicate replication.
@@ -163,9 +170,9 @@ def get_p4_srv_timezone_delta(p4):
     srv_time = p4_info['serverDate']
     srv_utc_offset = srv_time.split()[-2]
 
-    re_pat_timezone = '[+-]\d{4}'
+    re_pat_timezone = r'[+-]\d{4}'
     if (len(srv_utc_offset) != 5 or
-        not re.search(re_pat_timezone, srv_utc_offset)):
+            not re.search(re_pat_timezone, srv_utc_offset)):
         raise P4RBGError('incorrect srv_utc_offset(%s)' % srv_utc_offset)
 
     east = srv_utc_offset.startswith('+')
@@ -203,7 +210,7 @@ def update_user_and_timestamp(p4, changelist, orig_user, orig_date):
     logger.debug('%s %s' % (new_change._user, new_change._date))
     try:
         p4.save_change(new_change, '-f')
-    except P4Exception, e:
+    except P4Exception as e:
         err_msg = 'failed to update @%s, "admin" perm needed ' \
                   'for "p4 change -f"' % changelist
         logger.error(err_msg)
@@ -223,6 +230,7 @@ def generate_RBG_key(target_depot_dir, target_rev):
     key += '%s_%s' % (dst_dir, target_rev)
 
     return key
+
 
 def get_value_of_RBG_key(p4, target_depot_dir, target_rev):
     key = generate_RBG_key(target_depot_dir, target_rev)
@@ -264,9 +272,9 @@ def add_release_branch_copy_record(p4, source_depot_dir,
     @param src_rev, string of source revision
     @param dst_rev, string of target revision
     '''
-    new_copy_record = {'dst_revision':dst_rev,
-                       'src_revision':src_rev,
-                       'src_depot':source_depot_dir}
+    new_copy_record = {'dst_revision': dst_rev,
+                       'src_revision': src_rev,
+                       'src_depot': source_depot_dir}
 
     set_value_of_RBG_key(p4, target_depot_dir, dst_rev,
                          new_copy_record)
@@ -328,7 +336,7 @@ def find_parent_branches(p4, depot, parent_branches):
 
     first_rev_of_depot = change_revs[0]
     change_desc = p4.run_describe(first_rev_of_depot)[-1]
-    depotfile_rev = zip(change_desc['depotFile'], change_desc['rev'])
+    depotfile_rev = list(zip(change_desc['depotFile'], change_desc['rev']))
     integration_from = None
     for depot_file_path, depot_file_rev in depotfile_rev:
         depot_file_filelog = p4.run_filelog('-m1', '%s#%s' % (depot_file_path,
@@ -354,6 +362,7 @@ def find_parent_branches(p4, depot, parent_branches):
     parent_branches.append(branch_from_dir)
 
     find_parent_branches(p4, branch_from_dir, parent_branches)
+
 
 def get_branch_rev_hist(p4, depot_dir, src_branches):
     '''get revisions submitted to src_branches that are related to source_depot
@@ -397,11 +406,11 @@ def get_branch_rev_hist(p4, depot_dir, src_branches):
         last_rev = revisions[-1]
         last_branch = branches[-1]
         idx_of_last_rev = trunk_revs.index(last_rev)
-        unrelated_revs_before_last = trunk_revs[idx_of_last_rev+1:]
+        unrelated_revs_before_last = trunk_revs[idx_of_last_rev + 1:]
         revisions.extend(unrelated_revs_before_last)
         branches.extend([last_branch] * len(unrelated_revs_before_last))
 
-    rev_branch_latest_first = zip(revisions, branches)
+    rev_branch_latest_first = list(zip(revisions, branches))
 
     rev_branch_latest_first.reverse()
     rev_branch_earliest_first = rev_branch_latest_first
@@ -411,7 +420,7 @@ def get_branch_rev_hist(p4, depot_dir, src_branches):
     return rev_branch_earliest_first
 
 
-def map_src_rev_to_target_rev(src_rev_branches,  copied_records, target_depot):
+def map_src_rev_to_target_rev(src_rev_branches, copied_records, target_depot):
     '''map src revs to target revs
 
     These src revisions to be reverted must have been "p4
@@ -508,12 +517,11 @@ def get_revisions_to_copy(p4,
             for idx, rev_branch in enumerate(curr_rev_branches):
                 rev, b = rev_branch
                 if rev == common_ancestor:
-                    revs_to_copy = curr_rev_branches[idx+1:]
+                    revs_to_copy = curr_rev_branches[idx + 1:]
         else:
             revs_to_copy = curr_rev_branches[:]
 
-
-    logger.debug('*'*80)
+    logger.debug('*' * 80)
     logger.debug('common_ancestor = ')
     logger.debug(pformat(common_ancestor))
     logger.debug('revs_to_reverse = ')
@@ -537,9 +545,10 @@ def get_revisions_to_copy(p4,
             raise P4RBGError('%s not in %s' % (source_last_revision,
                                                revisions))
         idx_of_last_revision = revisions.index(source_last_revision)
-        return changes[:idx_of_last_revision+1]
+        return changes[:idx_of_last_revision + 1]
 
     return changes
+
 
 def get_branch_view(p4, existing_branches, from_branch, target_depot_dir):
     '''get branch view from from_branch to target_depot_dir, create if not exist
@@ -550,6 +559,7 @@ def get_branch_view(p4, existing_branches, from_branch, target_depot_dir):
                                          target_depot_dir)
         existing_branches[from_branch] = branch_view
     return branch_view
+
 
 def repopulate_change_submitter_time(p4, target_depot_dir, dry_run):
     '''update copied changes with src change submitter and time
@@ -583,6 +593,7 @@ def repopulate_change_submitter_time(p4, target_depot_dir, dry_run):
                 continue
 
             update_user_and_timestamp(p4, dst_rev, src_user, src_time)
+
 
 def release_branch_generate(p4_port, p4_user, p4_passwd,
                             source_depot_dir, target_depot_dir,
@@ -632,14 +643,14 @@ def release_branch_generate(p4_port, p4_user, p4_passwd,
                                            target_depot_dir, src_rev,
                                            dst_rev)
             logger.info('new p4 change: %s' % dst_rev)
-    except Exception, e:
+    except Exception as e:
         logger.error(e)
         logger.error(traceback.format_exc())
         raise
     finally:
         p4.run_revert('...')
         delete_p4_workspace(p4)
-        for copy_branch in copy_branch_views.values():
+        for copy_branch in list(copy_branch_views.values()):
             delete_branch_view(p4, copy_branch)
         p4.disconnect()
         shutil.rmtree(ws_root)

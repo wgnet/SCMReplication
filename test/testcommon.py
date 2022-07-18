@@ -1,11 +1,16 @@
 import os
 import shutil
 import sys
-import time
 import tempfile
-import string
+import P4P4Replicate as P4P4
+
 from contextlib import contextmanager
 from collections import namedtuple
+from lib.buildcommon import get_dir_file_hash
+from lib.buildlogger import getLogger
+from lib.p4server import P4Server
+from replicationunittest import (run_replication_in_container,
+                                 BUILD_TEST_P4D_USER)
 
 # add the path of scripts to sys.path to locate all scripts and libraries
 filepath = os.path.abspath(__file__)
@@ -13,22 +18,11 @@ dirname = os.path.dirname
 scriptRootDir = dirname(dirname(filepath))
 sys.path.append(scriptRootDir)
 
-from lib.dockerclient import DockerClient
-from lib.p4server import P4Server
-from lib.buildlogger import getLogger
-from lib.PerforceReplicate import P4Transfer
-from lib.buildcommon import generate_file_hash, get_dir_file_hash
-
-import P4P4Replicate as P4P4
 
 # global variables
 logger = getLogger(__name__)
 logger.setLevel('INFO')
 
-BUILD_TEST_P4D_DOCKER_IMAGE = 'buildtest_p4d_sampledepot'
-BUILD_TEST_SVN_DOCKER_IMAGE = 'buildtest_svn_sampledepot'
-BUILD_TEST_P4D_USER = 'bruno'
-BUILD_TEST_SVN_USER = 'guest'
 
 class BuildTestException(Exception):
     pass
@@ -52,8 +46,11 @@ def replicate_P4P4Replicate(src_mapping, dst_mapping,
     dst_ip = dst_docker_cli.get_container_ip_addr()
 
     def create_ws_mapping_file(ws_mapping):
-        cfgFd, cfgPath = tempfile.mkstemp(suffix='.cfg', text=True)
-        os.write(cfgFd, '\n'.join([' '.join(_) for _ in ws_mapping]))
+        cfgFd, cfgPath = tempfile.mkstemp(
+            suffix='.cfg', text=True, dir=os.path.join(
+                scriptRootDir, 'test/replication'))
+        os.write(cfgFd, str.encode(
+            '\n'.join([' '.join(_) for _ in ws_mapping])))
         os.close(cfgFd)
         return cfgPath
 
@@ -68,7 +65,9 @@ def replicate_P4P4Replicate(src_mapping, dst_mapping,
         source_last_changeset = str(source_last_changeset)
     ws_root = kwargs.get('ws_root')
     if not ws_root:
-        ws_root = tempfile.mkdtemp(prefix='buildtest')
+        ws_root = tempfile.mkdtemp(
+            prefix='buildtest', dir=os.path.join(
+                scriptRootDir, 'test/replication'))
 
     source_p4_stream = kwargs.get('source_p4_stream')
 
@@ -98,7 +97,11 @@ def replicate_P4P4Replicate(src_mapping, dst_mapping,
     args.verbose = 'INFO'
 
     try:
-        P4P4.replicate(args)
+        if os.environ.get("TEST_IN_HOST"):
+            P4P4.replicate(args)
+        else:
+            script = './P4P4Replicate.py'
+            run_replication_in_container(script, args)
     finally:
         shutil.rmtree(ws_root)
         os.remove(args.source_workspace_view_cfgfile)
@@ -175,7 +178,8 @@ class VerifyChangeDescAttr(object):
 
         src_msg = 'src(%s) desc[%s]=%s' % (self.src_id, attr_name, src_attr)
         dst_msg = 'dst(%s) desc[%s]=%s' % (self.dst_id, attr_name, dst_attr)
-        self.mismatchErr = 'change attr mismatch: \n%s, \n%s' % (src_msg, dst_msg)
+        self.mismatchErr = 'change attr mismatch: \n%s, \n%s' % (
+            src_msg, dst_msg)
 
         try:
             getattr(self, '_verify_' + attr_name.lower())(src_attr, dst_attr)
@@ -205,7 +209,7 @@ class VerifyChangeDescAttr(object):
                                                             str(revs)))
             return True
         return False
-        
+
     def _verify_rev(self, src_attr, dst_attr):
         '''verify if 'rev' of 'p4 describe' are the same
 
@@ -224,7 +228,7 @@ class VerifyChangeDescAttr(object):
 
     def _verify_action(self, src_attr, dst_attr):
         '''verify if 'action' of 'p4 describe' are the same
-        
+
         NOTE: If "branch" from directory not included in src depot,
         is 'add' acceptable
         '''
@@ -241,7 +245,7 @@ class VerifyChangeDescAttr(object):
             # exception edit -> add, if obliterated
             if (self._source_has_missing_rev(action_idx) and
                 src_act == 'edit' and
-                dst_act == 'add'):
+                    dst_act == 'add'):
                 continue
 
             # exception integrate -> edit
@@ -257,24 +261,24 @@ class VerifyChangeDescAttr(object):
         white spaces are removed from change description. need to know
         if it's OK or not.
         '''
-        src_desc_desc = set(map(string.strip, src_attr.split('\n')))
-        dst_desc_desc = set(map(string.strip, dst_attr.split('\n')))
+        src_desc_desc = set(map(str.strip, src_attr.split('\n')))
+        dst_desc_desc = set(map(str.strip, dst_attr.split('\n')))
         if src_desc_desc.issubset(dst_desc_desc):
             # src description should be part of replicated description
-            #if src_desc['desc'] not in dst_desc['desc']:
+            # if src_desc['desc'] not in dst_desc['desc']:
             return
 
         raise BuildTestException(self.mismatchErr)
 
     def _verify_fromfile(self, src_attr, dst_attr):
         '''verify if 'fromFile' of 'p4 describe' are the same
-        
+
         'fromFile' is a list of depot files. so before
         comparison, we can't compare two depot files with
         different root
         '''
-        src_filenames = map(os.path.basename, [_ for _ in src_attr if _])
-        dst_filenames = map(os.path.basename, [_ for _ in dst_attr if _])
+        src_filenames = list(map(os.path.basename, [_ for _ in src_attr if _]))
+        dst_filenames = list(map(os.path.basename, [_ for _ in dst_attr if _]))
         if src_filenames != dst_filenames:
             raise BuildTestException(self.mismatchErr)
 
@@ -297,19 +301,43 @@ class VerifyChangeDescAttr(object):
 
         NOTE: file types are considered the same if they are in the
         same set.
+        Reference https://www.perforce.com/manuals/cmdref/Content/CmdRef/file.types.synopsis.modifiers.html
         '''
-        p4types = {'text':['text', 'ltext', 'ktext', 'ctext', 'text+Fk'],
-                   'xtext':['xtext', 'xltext', 'text+Fx', 'kxtext', 'cxtext'],
-                   'binary':['binary', 'ubinary',],
-                   'xbinary':['xbinary', 'uxbinary', ],
-                   'resource':['resource', 'uresource',],
-                   }
+        p4types = {
+            'text': [
+                'text',
+                'ltext',
+                'ktext',
+                'ctext',
+                'text+Fk',
+                'text+F',
+                'text+k'],
+            'xtext': [
+                'xtext',
+                'xltext',
+                'text+Fx',
+                'kxtext',
+                'cxtext',
+                'text+x'],
+            'binary': [
+                'binary',
+                'ubinary',
+            ],
+            'xbinary': [
+                'xbinary',
+                'uxbinary',
+            ],
+            'resource': [
+                'resource',
+                'uresource',
+            ],
+        }
 
         for src_type, dst_type in zip(src_attr, dst_attr):
             if src_type == dst_type:
                 continue
 
-            for _, filetypes in p4types.items():
+            for _, filetypes in list(p4types.items()):
                 if set([src_type, dst_type]).issubset(set(filetypes)):
                     break
             else:
@@ -328,8 +356,8 @@ def verify_change_integrations(src_p4, dst_p4, src_desc, dst_desc,
     @param src_depot_map [in] depot to relative(to '/tmp') path mapping
     @param dst_depot_map [in] depot to relative(to '/tmp') path mapping
     '''
-    depot_rev = zip(src_desc['depotFile'], src_desc['rev'],
-                    dst_desc['depotFile'], dst_desc['rev'])
+    depot_rev = list(zip(src_desc['depotFile'], src_desc['rev'],
+                         dst_desc['depotFile'], dst_desc['rev']))
 
     for src_depot, src_rev, dst_depot, dst_rev in depot_rev:
         src_filelog = src_p4.run_filelog('-m1', '%s#%s' % (src_depot, src_rev))
@@ -339,12 +367,12 @@ def verify_change_integrations(src_p4, dst_p4, src_desc, dst_desc,
         src_integrations = src_filelog[0].revisions[0].integrations
         dst_integrations = dst_filelog[0].revisions[0].integrations
 
-        srcmap = lambda integ: src_depot_map.translate(integ.file)
-        dstmap = lambda integ: dst_depot_map.translate(integ.file)
+        def srcmap(integ): return src_depot_map.translate(integ.file)
+        def dstmap(integ): return dst_depot_map.translate(integ.file)
 
         # remove integrations not mapped in src/dst view
-        src_integs = filter(srcmap, src_integrations)
-        dst_integs = filter(dstmap, dst_integrations)
+        src_integs = list(filter(srcmap, src_integrations))
+        dst_integs = list(filter(dstmap, dst_integrations))
 
         # transform from Integration to tuple, because we know how
         # tuple compares equality
@@ -355,15 +383,15 @@ def verify_change_integrations(src_p4, dst_p4, src_desc, dst_desc,
         dst_integs = [P4Integ(integ.how, dstmap(integ), integ.srev, integ.erev)
                       for integ in dst_integs]
 
-        integ_from = lambda integ: integ.how.endswith('from')
-        src_integs = filter(integ_from, src_integs)
-        dst_integs = filter(integ_from, dst_integs)
+        def integ_from(integ): return integ.how.endswith('from')
+        src_integs = list(filter(integ_from, src_integs))
+        dst_integs = list(filter(integ_from, dst_integs))
 
         # sort it for comparison easily
         src_integs.sort(key=lambda integ: integ.file)
         dst_integs.sort(key=lambda integ: integ.file)
 
-        comb_integs = zip(src_integs, dst_integs)
+        comb_integs = list(zip(src_integs, dst_integs))
         for src_integ, dst_integ in comb_integs:
             if src_integ == dst_integ:
                 continue
@@ -374,7 +402,7 @@ def verify_change_integrations(src_p4, dst_p4, src_desc, dst_desc,
             if (src_integ.how in exception_actions and
                 src_integ.how == dst_integ.how and
                 src_integ.file == dst_integ.file and
-                src_integ.erev == dst_integ.erev):
+                    src_integ.erev == dst_integ.erev):
                 continue
 
             msg = 'src integ(%s) diffs dst integ(%s)' % (src_integrations,
@@ -413,6 +441,7 @@ def verify_change_descs(src_p4, dst_p4, src_desc, dst_desc,
     for attr in desc_attrs:
         descVerify.verify(attr)
 
+
 def verify_change_files(src_root, dst_root):
     '''verify if two p4 workspaces have identical files, same hash/exec bits
 
@@ -422,7 +451,7 @@ def verify_change_files(src_root, dst_root):
     src_file_hash = get_dir_file_hash(src_root)
     dst_file_hash = get_dir_file_hash(dst_root)
     if src_file_hash != dst_file_hash:
-        for src_f, src_v in src_file_hash.items():
+        for src_f, src_v in list(src_file_hash.items()):
             dst_f = src_f
             dst_v = dst_file_hash.get(src_f)
             if src_v != dst_v:
@@ -522,8 +551,10 @@ def verify_replication(src_mapping, dst_mapping,
     src_counter = kwargs.get('src_counter', 0)
     replicate_change_num = kwargs.get('replicate_change_num', 0)
     source_last_changeset = kwargs.get('source_last_changeset', None)
-    do_integration_verification = kwargs.get('do_integration_verification', True)
-    do_change_desc_verification = kwargs.get('do_change_desc_verification', True)
+    do_integration_verification = kwargs.get(
+        'do_integration_verification', True)
+    do_change_desc_verification = kwargs.get(
+        'do_change_desc_verification', True)
 
     if not source_last_changeset:
         source_last_changeset = '#head'
@@ -533,11 +564,15 @@ def verify_replication(src_mapping, dst_mapping,
     src_start_change = src_counter
     try:
         dst_start_change = 0
-        src_changes = src_p4.run_changes('-l', '...@%d,%s' % (src_start_change,
-                                                              source_last_changeset))
-        dst_changes = dst_p4.run_changes('-l', '...@%d,#head' % dst_start_change)
+        src_changes = src_p4.run_changes(
+            '-l', '...@%d,%s' %
+            (src_start_change, source_last_changeset))
+        dst_changes = dst_p4.run_changes(
+            '-l', '...@%d,#head' %
+            dst_start_change)
 
-        if src_changes and str(src_start_change) == str(src_changes[-1]['change']):
+        if src_changes and str(src_start_change) == str(
+                src_changes[-1]['change']):
             src_changes = src_changes[:-1]
 
         src_changes.reverse()
@@ -547,7 +582,7 @@ def verify_replication(src_mapping, dst_mapping,
         if replicate_change_num:
             src_changes = src_changes[:replicate_change_num]
 
-        if len(src_changes):
+        if src_changes:
             dst_changes = dst_changes[-len(src_changes):]
 
             verify_changes(src_p4, dst_p4, src_changes, dst_changes,
@@ -582,7 +617,7 @@ def get_changelist_in_sample_depot(docker_cli, depot_dir):
     p4 = P4Server('%s:1666' % container_ip, p4_user)
 
     sw_view = ((depot_dir, './...'),)
-    sw_mapping = map(P4Server.WorkspaceMapping._make, sw_view)
+    sw_mapping = list(map(P4Server.WorkspaceMapping._make, sw_view))
 
     ws_root = tempfile.mkdtemp(prefix='buildtest')
     p4.create_workspace(sw_mapping, ws_root=ws_root)
@@ -612,24 +647,28 @@ def replicate_sampledir_in_groups(depot_dir,
     dst_whole_view = ((dst_whole_depot, './...'),)
     dst_group_view = ((dst_group_depot, './...'),)
 
-    src_mapping = map(P4Server.WorkspaceMapping._make, src_view)
-    dst_whole_mapping = map(P4Server.WorkspaceMapping._make, dst_whole_view)
-    dst_group_mapping = map(P4Server.WorkspaceMapping._make, dst_group_view)
+    src_mapping = list(map(P4Server.WorkspaceMapping._make, src_view))
+    dst_whole_mapping = list(
+        map(P4Server.WorkspaceMapping._make, dst_whole_view))
+    dst_group_mapping = list(
+        map(P4Server.WorkspaceMapping._make, dst_group_view))
 
     replicate_P4P4Replicate(src_mapping, dst_whole_mapping,
                             src_docker_cli, dst_whole_docker_cli)
 
     # replicate depot in group to dst_group_depot and verify
     src_changes = get_changelist_in_sample_depot(src_docker_cli, src_depot)
-    src_changes = map(int, src_changes)
+    src_changes = list(map(int, src_changes))
     src_changes.insert(0, 0)
 
     num_changes_to_replicate = len(src_changes)
 
     prefix_repinfo = False
-    #while num_changes_to_replicate > 0:
+    # while num_changes_to_replicate > 0:
     for src_counter_ver in src_changes[::num_changes_per_round]:
-        ws_root = tempfile.mkdtemp(prefix='buildtest_group')
+        ws_root = tempfile.mkdtemp(
+            prefix='buildtest_group', dir=os.path.join(
+                scriptRootDir, 'test/replication'))
         # -1 for definition of counter is something like 'last
         # -submitted change'
         #src_counter_ver = src_changes[-num_changes_to_replicate] - 1
@@ -683,8 +722,8 @@ def replicate_sample_view(src_view, dst_view,
     @param src_view [in] list of view mapping ((from, to), (from, to),)
     @param dst_view [in] list of view mapping ((from, to), (from, to),)
     '''
-    src_mapping = map(P4Server.WorkspaceMapping._make, src_view)
-    dst_mapping = map(P4Server.WorkspaceMapping._make, dst_view)
+    src_mapping = list(map(P4Server.WorkspaceMapping._make, src_view))
+    dst_mapping = list(map(P4Server.WorkspaceMapping._make, dst_view))
 
     do_verification = True
     if kwargs.get('skip_verification', False):
@@ -709,7 +748,7 @@ def obliterate_all_depots(docker_cli):
     depot_mapping = p4.run_depots()
     for depot in depot_mapping:
         if not depot['map'].startswith('//'):
-            p4.run_obliterate('-y', '//'+depot['map'])
+            p4.run_obliterate('-y', '//' + depot['map'])
 
 
 @contextmanager
@@ -723,7 +762,7 @@ def get_p4d_from_docker(docker_cli, depot_dir):
 
     depot = '/%s/...' % depot_dir
     view = ((depot, './...'),)
-    mapping = map(P4Server.WorkspaceMapping._make, view)
+    mapping = list(map(P4Server.WorkspaceMapping._make, view))
 
     p4_user = BUILD_TEST_P4D_USER
     ip = docker_cli.get_container_ip_addr()
